@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 240, 244, 255;
+  --background-rgb: 11, 13, 19;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background-color: rgb(var(--background-rgb));
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Patrón de fibra de carbono para ambiente de pits */
+.bg-carbon {
+  background-color: #0d0f17;
+  background-image: 
+    radial-gradient(#1e2433 15%, transparent 16%),
+    radial-gradient(#1e2433 15%, transparent 16%);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+}
+
+/* Pista de carreras con textura de asfalto y líneas de velocidad */
+.f1-track-bg {
+  background: linear-gradient(180deg, #11141d 0%, #0d0f17 100%);
+  border-top: 2px dashed rgba(255, 255, 255, 0.15);
+  border-bottom: 2px dashed rgba(255, 255, 255, 0.15);
+}
+
+/* Bordillos de pista F1 (Kerbs rojo y blanco) */
+.f1-kerb {
+  background: repeating-linear-gradient(
+    90deg,
+    #E10600,
+    #E10600 20px,
+    #FFFFFF 20px,
+    #FFFFFF 40px
+  );
+}
+
+/* Efecto de nitro y resplandor */
+.nitro-flame {
+  background: radial-gradient(circle, #00F0FF 0%, #0077FE 50%, transparent 80%);
+}
+
+.nitro-boost-glow {
+  box-shadow: 0 0 35px rgba(0, 240, 255, 0.6), inset 0 0 15px rgba(0, 240, 255, 0.4);
+}
+
+/* Barra de progreso de telemetría */
+.telemetry-glow {
+  box-shadow: 0 0 12px rgba(225, 6, 0, 0.5);
+}
+
+/* Scrollbars estilizados */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0B0D13;
+}
+::-webkit-scrollbar-thumb {
+  background: #232A3D;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #E10600;
+}

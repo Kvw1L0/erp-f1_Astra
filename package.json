@@ -1,0 +1,12 @@
+{
+  "name": "el-gran-premio-de-la-eficiencia",
+  "version": "1.0.0",
+  "description": "El Gran Premio de la Eficiencia - Gamificación ERP NetSuite / F1 Pits",
+  "private": true,
+  "scripts": {
+    "install:all": "cd server && npm.cmd install && cd ../client && npm.cmd install",
+    "server": "cd server && node src/server.js",
+    "client": "cd client && npm.cmd run dev",
+    "test:race": "cd server && node src/tests/raceSimulation.js"
+  }
+}
