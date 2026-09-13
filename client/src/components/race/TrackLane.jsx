@@ -4,7 +4,9 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import F1CarSvg from './F1CarSvg';
 import NitroEffect from './NitroEffect';
-import { Trophy, Zap, Clock, CheckCircle, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import SkidSparks from './SkidSparks';
+import TireSmoke from './TireSmoke';
+import { Trophy, Zap, Clock, CheckCircle, ArrowUp, ArrowDown, Minus, ShieldCheck, Wind } from 'lucide-react';
 
 export default function TrackLane({
   laneNumber,
@@ -12,12 +14,14 @@ export default function TrackLane({
   result,
   telemetry,
   isRevealed,
-  isNitroActive
+  isNitroActive,
+  isCloseBattle = false
 }) {
   const currentPos = telemetry?.currentPosition || laneNumber;
   const posDelta = telemetry?.positionDelta || 0;
   const isLeader = currentPos === 1;
   const isBoosted = telemetry?.isFastestPerfect || result?.isFastestPerfect;
+  const isDRS = telemetry?.isDRSActive || result?.isDRSActive;
 
   const previousDist = telemetry?.previousDistance ?? 0;
   const targetDist = telemetry?.currentDistance ?? 0;
@@ -26,16 +30,20 @@ export default function TrackLane({
   const displayPercent = isRevealed ? targetDist : previousDist;
 
   // Mapeo seguro al carril visual (dejamos margen para el auto)
-  // 0% -> 2%, 100% -> 92%
+  // 0% -> 1%, 100% -> 91%
   const visualLeftPercent = Math.max(1, Math.min(91, (displayPercent / 100) * 90));
 
   return (
-    <div className="relative flex items-center h-16 md:h-18 my-1 bg-f1-card/90 border-y border-f1-border/40 hover:bg-f1-cardHover transition-colors overflow-hidden">
+    <div className={`relative flex items-center h-16 md:h-18 my-1 bg-f1-card/90 border-y transition-all overflow-hidden ${
+      isCloseBattle
+        ? 'border-yellow-400/60 bg-yellow-400/5 shadow-inner'
+        : 'border-f1-border/40 hover:bg-f1-cardHover'
+    }`}>
       {/* Columna Izquierda: Puesto, Delta de Adelantamiento y Escudería */}
       <div className="w-52 md:w-60 flex-shrink-0 flex items-center gap-2.5 px-3 border-r border-f1-border/60 z-20 bg-f1-card/95 h-full">
         {/* Badge de Puesto Oficial */}
         <div
-          className={`w-7 h-7 rounded-lg font-mono text-xs font-black flex items-center justify-center flex-shrink-0 shadow-sm ${
+          className={`w-7 h-7 rounded-lg font-mono text-xs font-black flex items-center justify-center flex-shrink-0 shadow-sm transition-transform ${
             isLeader
               ? 'bg-yellow-400 text-black shadow-yellow-400/40 scale-105'
               : currentPos === 2
@@ -51,7 +59,7 @@ export default function TrackLane({
         {/* Indicador de Adelantamiento (Delta de posición) */}
         <div className="w-8 flex justify-center">
           {posDelta > 0 ? (
-            <span className="flex items-center text-[10px] font-mono font-bold text-f1-green">
+            <span className="flex items-center text-[10px] font-mono font-bold text-f1-green animate-bounce">
               <ArrowUp className="w-3 h-3" />+{posDelta}
             </span>
           ) : posDelta < 0 ? (
@@ -70,9 +78,16 @@ export default function TrackLane({
 
         {/* Nombre de Equipo */}
         <div className="truncate flex-1">
-          <span className="text-xs md:text-sm font-bold text-white block truncate leading-tight">
-            {team.shortName || `EQ ${laneNumber}`}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs md:text-sm font-bold text-white block truncate leading-tight">
+              {team.shortName || `EQ ${laneNumber}`}
+            </span>
+            {isCloseBattle && (
+              <span className="px-1 py-0.2 rounded bg-yellow-400 text-black font-mono font-black text-[9px] uppercase animate-pulse">
+                BATTLE
+              </span>
+            )}
+          </div>
           <span className="text-[10px] font-mono text-slate-400 truncate block">
             {telemetry?.cumulativeScore || 0} pts acumulados
           </span>
@@ -106,13 +121,27 @@ export default function TrackLane({
           animate={{
             left: `${visualLeftPercent}%`,
             transition: {
-              duration: isBoosted && isNitroActive ? 1.2 : 2.5,
+              duration: isBoosted && isNitroActive ? 1.2 : isDRS ? 1.6 : 2.5,
               ease: isBoosted && isNitroActive ? 'easeOut' : [0.25, 1, 0.5, 1]
             }
           }}
         >
-          {/* Fuego Nitro si ganó el Boost */}
+          {/* Fuego Nitro si ganó el Pole Position Boost */}
           {isBoosted && isNitroActive && <NitroEffect />}
+
+          {/* Chispas de titanio en aceleración */}
+          {isRevealed && <SkidSparks count={isBoosted ? 12 : 6} />}
+
+          {/* Humo de neumáticos al salir */}
+          {isRevealed && <TireSmoke />}
+
+          {/* Badge Flotante DRS si está activo */}
+          {isDRS && (
+            <div className="absolute -top-6 left-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500 text-black font-mono font-black text-[9px] uppercase shadow-[0_0_10px_#10B981] animate-pulse">
+              <Wind className="w-3 h-3" />
+              <span>DRS +10%</span>
+            </div>
+          )}
 
           <F1CarSvg
             color={team.color || '#E10600'}
@@ -127,7 +156,8 @@ export default function TrackLane({
         <div className="text-right">
           <div className="flex items-center justify-end gap-1 font-bold text-white text-sm">
             {isBoosted && <Zap className="w-3.5 h-3.5 text-f1-cyan fill-f1-cyan animate-pulse" />}
-            <span className={isLeader ? 'text-yellow-400' : 'text-f1-cyan'}>
+            {isDRS && <Wind className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />}
+            <span className={isLeader ? 'text-yellow-400' : isDRS ? 'text-emerald-400' : 'text-f1-cyan'}>
               {targetDist}%
             </span>
           </div>

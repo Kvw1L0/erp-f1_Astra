@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Clock, AlertTriangle } from 'lucide-react';
 
 export default function CountdownBar({ startTime, durationSeconds = 60, onTimeExpired }) {
   const [timeLeftMs, setTimeLeftMs] = useState(durationSeconds * 1000);
   const totalMs = durationSeconds * 1000;
+  const lastVibratedSecond = useRef(-1);
 
   useEffect(() => {
     if (!startTime) return;
@@ -16,6 +17,15 @@ export default function CountdownBar({ startTime, durationSeconds = 60, onTimeEx
       const remaining = Math.max(0, totalMs - elapsed);
 
       setTimeLeftMs(remaining);
+
+      // Feedback háptico en los últimos 5 segundos
+      const currentSec = Math.ceil(remaining / 1000);
+      if (currentSec <= 5 && currentSec > 0 && currentSec !== lastVibratedSecond.current) {
+        lastVibratedSecond.current = currentSec;
+        if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+          window.navigator.vibrate(50);
+        }
+      }
 
       if (remaining <= 0) {
         clearInterval(interval);

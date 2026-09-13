@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useSocket } from '../../context/SocketContext';
 import LiveTelemetry from '../../components/admin/LiveTelemetry';
 import CaseEditor from '../../components/admin/CaseEditor';
-import { Flag, Play, Lock, Eye, RotateCcw, ShieldCheck, Trophy, Sparkles, FastForward, Zap, Compass, Flame } from 'lucide-react';
+import DebriefModal from '../../components/race/DebriefModal';
+import { Flag, Play, Lock, Eye, RotateCcw, ShieldCheck, Trophy, Sparkles, FastForward, Zap, Compass, Flame, AlertOctagon, Users, BarChart3 } from 'lucide-react';
 
 const DEFAULT_CASES = [
   {
@@ -143,6 +144,28 @@ export default function AdminPage() {
   const [adminState, setAdminState] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState('');
+  const [showDebrief, setShowDebrief] = useState(false);
+
+  const isVSCActive = gameState?.isSafetyCarActive || false;
+
+  const handleToggleVSC = async () => {
+    setIsLoading(true);
+    const newStatus = !isVSCActive;
+    await cloudActions.toggleSafetyCar(newStatus);
+    setIsLoading(false);
+    setNotification(newStatus ? '⚠️ Virtual Safety Car DESPLEGADO. Velocidades limitadas al 50%.' : '🟢 Virtual Safety Car FINALIZADO. Carrera relanzada.');
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  const handleSimulate10Teams = async () => {
+    setIsLoading(true);
+    const res = await cloudActions.simulate10Teams(selectedCase, currentSector, totalSectors);
+    setIsLoading(false);
+    if (res?.success) {
+      setNotification('🏎️ Simulación de 10 Escuderías en vivo ejecutada con telemetría completa.');
+      setTimeout(() => setNotification(''), 4000);
+    }
+  };
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
@@ -380,6 +403,54 @@ export default function AdminPage() {
                 </button>
               </div>
 
+              {/* Botones Especiales de Dirección y Demo (Fila 2) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                {/* 5. Simulación 10 Escuderías en Vivo */}
+                <button
+                  type="button"
+                  onClick={handleSimulate10Teams}
+                  disabled={isLoading}
+                  className="p-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-500 hover:to-pink-500 text-white font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-600/25 active:scale-95 border border-purple-400/30"
+                >
+                  <Users className="w-4 h-4 fill-current" />
+                  <div className="text-left">
+                    <span className="block leading-tight">🏎️ SIMULAR 10 ESCUDERÍAS</span>
+                    <span className="text-[9px] opacity-80 font-normal">Demo instantánea con telemetría</span>
+                  </div>
+                </button>
+
+                {/* 6. Virtual Safety Car (VSC) Toggle */}
+                <button
+                  type="button"
+                  onClick={handleToggleVSC}
+                  disabled={isLoading}
+                  className={`p-3.5 rounded-xl font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 border ${
+                    isVSCActive
+                      ? 'bg-amber-500 text-black border-amber-300 animate-pulse shadow-amber-500/40'
+                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                  }`}
+                >
+                  <AlertOctagon className="w-4 h-4 fill-current" />
+                  <div className="text-left">
+                    <span className="block leading-tight">{isVSCActive ? '⚠️ DESACTIVAR VSC' : '⚠️ VIRTUAL SAFETY CAR'}</span>
+                    <span className="text-[9px] opacity-80 font-normal">{isVSCActive ? 'Compresión activa (50%)' : 'Comprimir brechas 50%'}</span>
+                  </div>
+                </button>
+
+                {/* 7. Debrief de Pits Modal */}
+                <button
+                  type="button"
+                  onClick={() => setShowDebrief(true)}
+                  className="p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-f1-cyan border border-f1-cyan/40 font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all active:scale-95"
+                >
+                  <BarChart3 className="w-4 h-4 text-f1-cyan" />
+                  <div className="text-left">
+                    <span className="block leading-tight">📊 DEBRIEF DE PITS (MÉTRICAS)</span>
+                    <span className="text-[9px] opacity-80 font-normal">Análisis ROI & Adopción NetSuite</span>
+                  </div>
+                </button>
+              </div>
+
               <div className="pt-4 border-t border-f1-border/60 flex flex-wrap justify-between items-center gap-4 text-xs font-mono text-slate-400">
                 <div className="flex items-center gap-2">
                   <Compass className="w-4 h-4 text-f1-cyan" />
@@ -408,6 +479,14 @@ export default function AdminPage() {
           />
         )}
       </div>
+
+      {showDebrief && (
+        <DebriefModal
+          caseData={selectedCase}
+          results={gameState?.calculatedResults}
+          onClose={() => setShowDebrief(false)}
+        />
+      )}
 
       <footer className="mt-8 text-center text-xs font-mono text-slate-500">
         VELTIS F1 TELEMETRY SYSTEM • DIRECCIÓN DE CARRERA BACKOFFICE

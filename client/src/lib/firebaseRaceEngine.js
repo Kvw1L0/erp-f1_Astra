@@ -1,92 +1,103 @@
-import { database, isFirebaseConfigured } from './firebase';
-import { ref, set, get, onValue, update, serverTimestamp } from 'firebase/database';
+import { ref, set, get, update, onValue } from 'firebase/database';
+import { getFirebaseDb } from './firebase';
 
 export const TEAMS_LIST = [
-  { id: 1, name: "Escudería 1 - Red Bull Racing", color: "#3671C6", shortName: "EQ 01", pin: "1" },
-  { id: 2, name: "Escudería 2 - Scuderia Ferrari", color: "#E80020", shortName: "EQ 02", pin: "2" },
-  { id: 3, name: "Escudería 3 - Mercedes-AMG Petronas", color: "#27F4D2", shortName: "EQ 03", pin: "3" },
-  { id: 4, name: "Escudería 4 - McLaren F1 Team", color: "#FF8000", shortName: "EQ 04", pin: "4" },
-  { id: 5, name: "Escudería 5 - Aston Martin Aramco", color: "#229971", shortName: "EQ 05", pin: "5" },
-  { id: 6, name: "Escudería 6 - Alpine F1 Team", color: "#0093CC", shortName: "EQ 06", pin: "6" },
-  { id: 7, name: "Escudería 7 - Williams Racing", color: "#64C4FF", shortName: "EQ 07", pin: "7" },
-  { id: 8, name: "Escudería 8 - Visa Cash App RB", color: "#6692FF", shortName: "EQ 08", pin: "8" },
-  { id: 9, name: "Escudería 9 - Stake F1 Kick Sauber", color: "#52E252", shortName: "EQ 09", pin: "9" },
-  { id: 10, name: "Escudería 10 - Haas F1 Team", color: "#B6BABD", shortName: "EQ 10", pin: "10" }
+  { id: 1, name: "Escudería 1 - Red Bull Racing", color: "#3671C6", shortName: "EQ 01" },
+  { id: 2, name: "Escudería 2 - Scuderia Ferrari", color: "#E80020", shortName: "EQ 02" },
+  { id: 3, name: "Escudería 3 - Mercedes-AMG Petronas", color: "#27F4D2", shortName: "EQ 03" },
+  { id: 4, name: "Escudería 4 - McLaren F1 Team", color: "#FF8000", shortName: "EQ 04" },
+  { id: 5, name: "Escudería 5 - Aston Martin Aramco", color: "#229971", shortName: "EQ 05" },
+  { id: 6, name: "Escudería 6 - Alpine F1 Team", color: "#0093CC", shortName: "EQ 06" },
+  { id: 7, name: "Escudería 7 - Williams Racing", color: "#64C4FF", shortName: "EQ 07" },
+  { id: 8, name: "Escudería 8 - Visa Cash App RB", color: "#6692FF", shortName: "EQ 08" },
+  { id: 9, name: "Escudería 9 - Stake F1 Kick Sauber", color: "#52E252", shortName: "EQ 09" },
+  { id: 10, name: "Escudería 10 - Haas F1 Team", color: "#B6BABD", shortName: "EQ 10" }
 ];
 
-export class FirebaseRaceEngine {
+class FirebaseRaceEngine {
   constructor() {
-    this.db = database;
+    this.db = null;
+  }
+
+  init() {
+    if (!this.db) {
+      this.db = getFirebaseDb();
+    }
+    return this.db;
   }
 
   // 1. Escuchar cambios de estado global de la carrera
   onStateChange(callback) {
+    this.init();
     if (!this.db) return () => {};
+
     const stateRef = ref(this.db, 'f1_race/state');
     return onValue(stateRef, (snapshot) => {
       const val = snapshot.val();
-      if (val) callback(val);
+      callback(val);
     });
   }
 
-  // 2. Escuchar telemetría acumulada de los 10 equipos
+  // 2. Escuchar cambios de telemetría de los 10 equipos
   onTelemetryChange(callback) {
+    this.init();
     if (!this.db) return () => {};
-    const telemetryRef = ref(this.db, 'f1_race/telemetry');
-    return onValue(telemetryRef, (snapshot) => {
+
+    const telemRef = ref(this.db, 'f1_race/telemetry');
+    return onValue(telemRef, (snapshot) => {
       const val = snapshot.val();
-      if (val) callback(val);
+      callback(val);
     });
   }
 
-  // 3. Iniciar un caso en la nube de Firebase
+  // 3. Iniciar un caso / Sector
   async startCase(caseData, sectorIndex = 1, totalSectors = 10) {
+    this.init();
     if (!this.db) return;
-    const now = Date.now();
 
-    // Resetear envíos para esta ronda
+    const startTime = Date.now();
+
+    // Limpiar envíos de la ronda previa
     await set(ref(this.db, 'f1_race/submissions'), {});
 
     // Actualizar estado activo
     await update(ref(this.db, 'f1_race/state'), {
       status: 'ACTIVE_CASE',
       currentCase: caseData,
-      currentSectorIndex: Number(sectorIndex) || 1,
-      totalSectors: Number(totalSectors) || 10,
-      startTime: now,
+      currentSectorIndex: Number(sectorIndex),
+      totalSectors: Number(totalSectors),
+      startTime,
       durationLimitSeconds: caseData.timeLimitSeconds || 60,
       submissionsCount: 0,
-      calculatedResults: null
+      calculatedResults: null,
+      isSafetyCarActive: false
     });
   }
 
-  // 4. Enviar respuestas de un equipo en la nube
+  // 4. Enviar respuestas de un participante
   async submitAnswers(teamId, answers, startTime, currentCase) {
+    this.init();
     if (!this.db) return;
+
     const numTeamId = Number(teamId);
-    const now = Date.now();
-    const durationMs = Math.max(100, now - (startTime || now));
     const team = TEAMS_LIST.find(t => t.id === numTeamId);
+    const now = Date.now();
+    const effectiveStart = startTime || now;
+    const durationMs = Math.max(100, now - effectiveStart);
 
-    // Calcular puntaje
     let totalScore = 0;
-    const stepBreakdown = [];
+    const stepBreakdown = {};
+
     const steps = currentCase?.steps || [];
-
     steps.forEach(step => {
-      const selectedOptId = answers[step.id] || answers[step.stepNumber];
-      const matchedOpt = step.options?.find(o => o.id === selectedOptId);
-      const points = matchedOpt ? (Number(matchedOpt.points) || 0) : 0;
-      totalScore += points;
-
-      stepBreakdown.push({
-        stepId: step.id,
-        stepNumber: step.stepNumber,
-        stepTitle: step.title,
-        selectedOptionId: selectedOptId,
-        pointsEarned: points,
-        feedback: matchedOpt?.feedback || ''
-      });
+      const chosenOptId = answers[step.id];
+      const opt = step.options?.find(o => o.id === chosenOptId);
+      const pts = opt ? Number(opt.points) || 0 : 0;
+      totalScore += pts;
+      stepBreakdown[step.id] = {
+        chosenOptionId: chosenOptId,
+        points: pts
+      };
     });
 
     const submissionData = {
@@ -114,8 +125,9 @@ export class FirebaseRaceEngine {
     return submissionData;
   }
 
-  // 5. Finalizar automáticamente y calcular resultados (Botón Auto)
+  // 5. Finalizar automáticamente y calcular resultados (Botón Auto / Demo)
   async autoFinish(currentCase, currentSectorIndex = 1, totalSectors = 10) {
+    this.init();
     if (!this.db) return;
     const steps = currentCase?.steps || [];
     const subsSnap = await get(ref(this.db, 'f1_race/submissions'));
@@ -125,8 +137,9 @@ export class FirebaseRaceEngine {
     for (const team of TEAMS_LIST) {
       if (!currentSubs[team.id]) {
         const simAnswers = {};
-        const isPerfect = team.id === 2 || Math.random() > 0.45;
-        const durationMs = Math.round((6 + Math.random() * 18) * 1000);
+        // Simulación variada: algunos perfectos, algunos con pequeños errores
+        const isPerfect = team.id === 1 || team.id === 4 || team.id === 8 || Math.random() > 0.45;
+        const durationMs = Math.round((7 + Math.random() * 20) * 1000);
 
         steps.forEach(s => {
           if (isPerfect) {
@@ -146,8 +159,9 @@ export class FirebaseRaceEngine {
     return await this.calculateAndRevealResults(currentCase, currentSectorIndex, totalSectors);
   }
 
-  // 6. Calcular resultados de la ronda y actualizar telemetría acumulada
+  // 6. Calcular resultados de la ronda, Pole Position Boost (+20%) y DRS (+10% en P8-P10)
   async calculateAndRevealResults(currentCase, currentSectorIndex = 1, totalSectors = 10) {
+    this.init();
     if (!this.db) return;
 
     const subsSnap = await get(ref(this.db, 'f1_race/submissions'));
@@ -186,6 +200,7 @@ export class FirebaseRaceEngine {
           durationFormatted: (sub.durationMs / 1000).toFixed(2) + 's',
           isPerfect: sub.score === maxPossibleScore,
           isFastestPerfect: false,
+          isDRSActive: false,
           previousDistance: prevTelem.currentDistance || 0,
           sectorAdvancePercent: 0,
           newCumulativeDistance: prevTelem.currentDistance || 0,
@@ -204,6 +219,7 @@ export class FirebaseRaceEngine {
           durationFormatted: 'DNF',
           isPerfect: false,
           isFastestPerfect: false,
+          isDRSActive: false,
           previousDistance: prevTelem.currentDistance || 0,
           sectorAdvancePercent: 0,
           newCumulativeDistance: prevTelem.currentDistance || 0,
@@ -213,7 +229,7 @@ export class FirebaseRaceEngine {
       }
     });
 
-    // Identificar ganador del Pole Position Boost en este sector
+    // Identificar ganador del Pole Position Boost (+20%) en este sector
     const perfectSubs = roundResults.filter(t => t.hasSubmitted && t.isPerfect);
     let fastestPerfectTeamId = null;
     if (perfectSubs.length > 0) {
@@ -221,13 +237,24 @@ export class FirebaseRaceEngine {
       fastestPerfectTeamId = perfectSubs[0].teamId;
     }
 
+    // Aplicar cálculos de avance, Pole Boost y DRS Boost
     roundResults.forEach(item => {
       const accuracyRatio = item.caseScore / maxPossibleScore;
+      const isEligibleForDRS = item.previousPosition >= 8 && item.isPerfect && item.teamId !== fastestPerfectTeamId;
+
       if (fastestPerfectTeamId && item.teamId === fastestPerfectTeamId) {
         item.isFastestPerfect = true;
+        item.isDRSActive = false;
+        // Bonificación de +20%
         item.sectorAdvancePercent = parseFloat((sectorWeightPercent * 1.20).toFixed(2));
+      } else if (isEligibleForDRS) {
+        item.isFastestPerfect = false;
+        item.isDRSActive = true;
+        // Bonificación DRS de +10% para equipos rezagados
+        item.sectorAdvancePercent = parseFloat((sectorWeightPercent * 1.10).toFixed(2));
       } else {
         item.isFastestPerfect = false;
+        item.isDRSActive = false;
         item.sectorAdvancePercent = parseFloat((accuracyRatio * sectorWeightPercent).toFixed(2));
       }
 
@@ -266,7 +293,8 @@ export class FirebaseRaceEngine {
         currentPosition: item.currentPosition,
         positionDelta: item.positionDelta,
         lastSectorAdvance: item.sectorAdvancePercent,
-        isFastestPerfect: item.isFastestPerfect
+        isFastestPerfect: item.isFastestPerfect,
+        isDRSActive: item.isDRSActive
       };
     });
 
@@ -292,8 +320,35 @@ export class FirebaseRaceEngine {
     return calculatedResults;
   }
 
-  // 7. Siguiente Sector
+  // 7. Activar o desactivar Virtual Safety Car (VSC)
+  async toggleSafetyCar(isActive) {
+    this.init();
+    if (!this.db) return;
+
+    if (isActive) {
+      // Comprimir brechas entre autos al 50%
+      const telemSnap = await get(ref(this.db, 'f1_race/telemetry'));
+      const telem = telemSnap.val() || {};
+      const teamIds = Object.keys(telem);
+      if (teamIds.length > 0) {
+        const distances = teamIds.map(id => telem[id].currentDistance || 0);
+        const maxDist = Math.max(...distances);
+        teamIds.forEach(id => {
+          const d = telem[id].currentDistance || 0;
+          telem[id].currentDistance = parseFloat((maxDist - (maxDist - d) * 0.5).toFixed(2));
+        });
+        await set(ref(this.db, 'f1_race/telemetry'), telem);
+      }
+    }
+
+    await update(ref(this.db, 'f1_race/state'), {
+      isSafetyCarActive: !!isActive
+    });
+  }
+
+  // 8. Siguiente Sector
   async nextSector(nextSectorIndex, totalSectors = 10) {
+    this.init();
     if (!this.db) return;
 
     // Actualizar previousDistance = currentDistance en la telemetría
@@ -303,6 +358,8 @@ export class FirebaseRaceEngine {
     Object.keys(telem).forEach(teamId => {
       telem[teamId].previousDistance = telem[teamId].currentDistance;
       telem[teamId].previousPosition = telem[teamId].currentPosition;
+      telem[teamId].isDRSActive = false;
+      telem[teamId].isFastestPerfect = false;
     });
 
     await set(ref(this.db, 'f1_race/telemetry'), telem);
@@ -314,12 +371,14 @@ export class FirebaseRaceEngine {
       totalSectors: Number(totalSectors),
       startTime: null,
       submissionsCount: 0,
-      calculatedResults: null
+      calculatedResults: null,
+      isSafetyCarActive: false
     });
   }
 
-  // 8. Reiniciar Campeonato en la Nube (0%)
+  // 9. Reiniciar Campeonato en la Nube (0%)
   async resetChampionship() {
+    this.init();
     if (!this.db) return;
 
     const initialTelemetry = {};
@@ -336,7 +395,8 @@ export class FirebaseRaceEngine {
         currentPosition: idx + 1,
         positionDelta: 0,
         lastSectorAdvance: 0,
-        isFastestPerfect: false
+        isFastestPerfect: false,
+        isDRSActive: false
       };
     });
 
@@ -350,7 +410,8 @@ export class FirebaseRaceEngine {
       startTime: null,
       durationLimitSeconds: 60,
       submissionsCount: 0,
-      calculatedResults: null
+      calculatedResults: null,
+      isSafetyCarActive: false
     });
   }
 }

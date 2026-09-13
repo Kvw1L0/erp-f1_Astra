@@ -40,4 +40,15 @@ if (typeof window !== 'undefined' && isFirebaseConfigured()) {
   }
 }
 
+export const getFirebaseDb = () => {
+  if (!database && app) {
+    try {
+      database = getDatabase(app);
+    } catch (e) {
+      console.warn('Realtime Database init note:', e);
+    }
+  }
+  return database;
+};
+
 export { app, database, firestore, firebaseConfig };

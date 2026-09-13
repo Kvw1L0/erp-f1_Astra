@@ -2,7 +2,7 @@ import '../styles/globals.css';
 import { SocketProvider } from '../context/SocketContext';
 
 export const metadata = {
-  title: 'El Gran Premio de la Eficiencia | ERP NetSuite Gamification',
+  title: 'ERP Formula 1 | NetSuite Gamification & Live Telemetry',
   description: 'Aplicación web interactiva en tiempo real para eventos corporativos y capacitación ERP con temática de Fórmula 1 y Cultura Pits.',
 };
 

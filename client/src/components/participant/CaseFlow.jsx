@@ -1,26 +1,98 @@
 'use client';
 
-import React, { useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronUp, Send, AlertCircle, Wrench, ShieldCheck, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle2, ChevronDown, ChevronUp, Send, AlertCircle, Wrench, ShieldCheck, HelpCircle, WifiOff, Radio, Users } from 'lucide-react';
 import { sounds } from '../../lib/soundEffects';
 
-export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting }) {
+export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, teamId = 1 }) {
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [expandedStep, setExpandedStep] = useState(1);
   const [validationError, setValidationError] = useState('');
+  const [isOnline, setIsOnline] = useState(true);
+  const [pitWallFeed, setPitWallFeed] = useState([
+    '🟢 Sesión de Pits iniciada. Todos los monoplazas en garaje.'
+  ]);
 
   const steps = currentCase?.steps || [];
   const totalSteps = steps.length;
   const answeredCount = Object.keys(selectedAnswers).length;
   const isComplete = totalSteps > 0 && answeredCount === totalSteps;
 
+  // Cargar borrador persistente de localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && currentCase?.id) {
+      try {
+        const saved = localStorage.getItem(`f1_draft_${currentCase.id}_team_${teamId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setSelectedAnswers(parsed);
+        }
+      } catch (e) {}
+    }
+  }, [currentCase?.id, teamId]);
+
+  // Detector de conectividad de red
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    setIsOnline(navigator.onLine);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Simulación dinámica de Muro de Pits en Vivo (Tensión de rivales sin revelar respuestas)
+  useEffect(() => {
+    const rivalTeams = [
+      'Red Bull Racing', 'Scuderia Ferrari', 'Mercedes-AMG', 'McLaren F1',
+      'Aston Martin', 'Alpine F1', 'Williams Racing', 'Haas F1'
+    ];
+
+    const interval = setInterval(() => {
+      const randomRival = rivalTeams[Math.floor(Math.random() * rivalTeams.length)];
+      const events = [
+        `⚡ ${randomRival} ajustó parámetros en Pits...`,
+        `⏱️ ${randomRival} completó paso y acelera en telemetría.`,
+        `📡 Muro de Pits: Transmisiones en progreso...`
+      ];
+      const randomEvent = events[Math.floor(Math.random() * events.length)];
+
+      setPitWallFeed(prev => [randomEvent, ...prev.slice(0, 3)]);
+    }, 9000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const handleSelectOption = (stepId, optionId, stepNumber) => {
     sounds.playSelect();
+
+    // Feedback háptico en móvil/tablet
+    if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+      window.navigator.vibrate(30);
+    }
+
     setValidationError('');
-    setSelectedAnswers(prev => ({
-      ...prev,
+    const updated = {
+      ...selectedAnswers,
       [stepId]: optionId
-    }));
+    };
+
+    setSelectedAnswers(updated);
+
+    // Guardar copia de seguridad en memoria local
+    if (typeof window !== 'undefined' && currentCase?.id) {
+      try {
+        localStorage.setItem(`f1_draft_${currentCase.id}_team_${teamId}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
 
     // Abrir automáticamente el siguiente paso si está pendiente
     if (stepNumber < totalSteps) {
@@ -33,12 +105,45 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting })
       setValidationError(`Debes completar los ${totalSteps} pasos de la parada en Pits antes de enviar.`);
       return;
     }
+
+    // Feedback háptico de aceleración / salida de Pits
+    if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+      window.navigator.vibrate([70, 40, 120]);
+    }
+
     sounds.playPitStopConfirm();
+
+    // Limpiar borrador local
+    if (typeof window !== 'undefined' && currentCase?.id) {
+      try {
+        localStorage.removeItem(`f1_draft_${currentCase.id}_team_${teamId}`);
+      } catch (e) {}
+    }
+
     onSubmitAnswers(selectedAnswers);
   };
 
   return (
-    <div className="max-w-4xl mx-auto w-full space-y-6 pb-24">
+    <div className="max-w-4xl mx-auto w-full space-y-6 pb-28 select-none">
+      {/* Alerta de Red Offline */}
+      {!isOnline && (
+        <div className="p-3.5 bg-red-500/20 border border-red-500 rounded-2xl flex items-center gap-3 text-red-200 text-xs font-mono shadow-lg animate-pulse">
+          <WifiOff className="w-4 h-4 flex-shrink-0" />
+          <span>⚠️ SEÑAL DE PITS INESTABLE: Respuestas guardadas en memoria local. Se transmitirán automáticamente al recuperar cobertura.</span>
+        </div>
+      )}
+
+      {/* Muro de Pits en Vivo (Live Pit Wall Feed) */}
+      <div className="bg-f1-card/90 p-3 rounded-xl border border-f1-border/70 flex items-center justify-between gap-3 text-xs font-mono">
+        <div className="flex items-center gap-2 text-f1-cyan flex-shrink-0 font-bold">
+          <Radio className="w-3.5 h-3.5 animate-pulse text-f1-cyan" />
+          <span className="hidden sm:inline">MURO DE PITS:</span>
+        </div>
+        <div className="text-slate-300 truncate text-[11px]">
+          {pitWallFeed[0]}
+        </div>
+      </div>
+
       {/* Tarjeta de Título del Caso ERP */}
       <div className="bg-f1-card p-6 rounded-2xl border border-f1-border relative overflow-hidden shadow-xl">
         <div className="absolute top-0 right-0 w-32 h-32 bg-f1-red/10 rounded-bl-full pointer-events-none" />
@@ -123,7 +228,7 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting })
                 <div className="flex items-center gap-3">
                   {isAnswered && (
                     <span className="hidden sm:inline-block px-2.5 py-1 bg-f1-green/10 border border-f1-green/30 text-f1-green text-[11px] font-mono rounded-lg font-semibold">
-                      LISTO
+                      CONFIGURADO
                     </span>
                   )}
                   {isExpanded ? (
@@ -191,10 +296,10 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting })
           <div className="text-xs font-mono text-slate-400">
             {isComplete ? (
               <span className="text-f1-green flex items-center gap-1 font-semibold">
-                <ShieldCheck className="w-4 h-4" /> TODOS LOS PASOS CONFIGURADOS. LISTO PARA TRANSMITIR.
+                <ShieldCheck className="w-4 h-4" /> TODOS LOS PASOS CONFIGURADOS. LISTO PARA TRANSMITIR A PITS.
               </span>
             ) : (
-              <span>FALTAN {totalSteps - answeredCount} PASOS POR SELECCIONAR</span>
+              <span>FALTAN {totalSteps - answeredCount} PASOS POR CONFIGURAR</span>
             )}
           </div>
 

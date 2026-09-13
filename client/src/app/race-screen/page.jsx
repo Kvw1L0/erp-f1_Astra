@@ -1,13 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSocket } from '../../context/SocketContext';
 import TrackLane from '../../components/race/TrackLane';
 import PodiumModal from '../../components/race/PodiumModal';
 import CinematicVideoModal from '../../components/race/CinematicVideoModal';
 import CaseSolutionModal from '../../components/race/CaseSolutionModal';
+import DebriefModal from '../../components/race/DebriefModal';
+import SafetyCarOverlay from '../../components/race/SafetyCarOverlay';
+import OvertakeBanner from '../../components/race/OvertakeBanner';
 import { sounds } from '../../lib/soundEffects';
-import { Flag, Zap, Volume2, VolumeX, Maximize, Trophy, Clock, Users, Compass, BookOpen, Film } from 'lucide-react';
+import { Flag, Zap, Volume2, VolumeX, Maximize, Trophy, Clock, Users, Compass, BookOpen, Film, AlertTriangle, TrendingUp } from 'lucide-react';
 
 const TEAMS_LIST = [
   { id: 1, name: "Escudería 1 - Red Bull Racing", color: "#3671C6", shortName: "EQ 01" },
@@ -25,12 +28,15 @@ const TEAMS_LIST = [
 export default function RaceScreenPage() {
   const { socket, isConnected, gameState } = useSocket();
   const [isMuted, setIsMuted] = useState(false);
+  const [isAmbientPlaying, setIsAmbientPlaying] = useState(false);
   const [isNitroActive, setIsNitroActive] = useState(false);
   const [showCinematic, setShowCinematic] = useState(false);
   const [showPodium, setShowPodium] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
+  const [showDebrief, setShowDebrief] = useState(false);
   const [resultsData, setResultsData] = useState(null);
   const [enableCinematic, setEnableCinematic] = useState(true);
+  const [recentOvertakes, setRecentOvertakes] = useState([]);
 
   useEffect(() => {
     if (socket && isConnected) {
@@ -38,7 +44,22 @@ export default function RaceScreenPage() {
     }
   }, [socket, isConnected]);
 
-  // Manejar revelación de resultados con secuencia de Cinemática -> Pista -> Nitro -> Podio
+  // Manejar sonido ambiente en reposo
+  useEffect(() => {
+    if (gameState?.status === 'ACTIVE_CASE' && !isMuted) {
+      sounds.startAmbientEngine();
+      setIsAmbientPlaying(true);
+    } else {
+      sounds.stopAmbientEngine();
+      setIsAmbientPlaying(false);
+    }
+
+    return () => {
+      sounds.stopAmbientEngine();
+    };
+  }, [gameState?.status, isMuted]);
+
+  // Manejar revelación de resultados con secuencia: Cinemática -> Pista -> Nitro/DRS -> Podio
   useEffect(() => {
     if (!socket) return;
 
@@ -47,11 +68,24 @@ export default function RaceScreenPage() {
       setIsNitroActive(false);
       setShowPodium(false);
 
+      // Calcular adelantamientos para el banner F1
+      if (results?.ranking) {
+        const overtakes = results.ranking
+          .filter(r => r.positionDelta > 0)
+          .sort((a, b) => b.positionDelta - a.positionDelta)
+          .map(r => ({
+            teamId: r.teamId,
+            teamName: r.shortName || r.teamName,
+            color: r.color,
+            newPos: r.currentPosition,
+            delta: r.positionDelta
+          }));
+        setRecentOvertakes(overtakes);
+      }
+
       if (enableCinematic) {
-        // 1. Mostrar cinemática de video
         setShowCinematic(true);
       } else {
-        // Si la cinemática está desactivada, ir directo a la animación de pista
         triggerTrackAnimation(results);
       }
     });
@@ -62,6 +96,8 @@ export default function RaceScreenPage() {
       setShowCinematic(false);
       setShowPodium(false);
       setShowSolution(false);
+      setShowDebrief(false);
+      setRecentOvertakes([]);
     });
 
     return () => {
@@ -72,18 +108,25 @@ export default function RaceScreenPage() {
 
   const triggerTrackAnimation = (results) => {
     setShowCinematic(false);
+    sounds.stopAmbientEngine();
     sounds.playRaceStart();
 
-    // Pausa dramática de 2 segundos antes del Nitro Boost
+    // Pausa dramática de 2 segundos antes del Nitro Boost y DRS
     const nitroTimer = setTimeout(() => {
       if (results?.fastestPerfectTeamId) {
         setIsNitroActive(true);
         sounds.playNitroBoost();
       }
 
+      // Si hay DRS activado, emitir tono aerodinámico
+      const hasDRS = results?.teams?.some(t => t.isDRSActive);
+      if (hasDRS) {
+        setTimeout(() => sounds.playDRSActive(), 600);
+      }
+
       const podiumTimer = setTimeout(() => {
         setShowPodium(true);
-      }, 3000);
+      }, 3500);
 
       return () => clearTimeout(podiumTimer);
     }, 2000);
@@ -95,6 +138,10 @@ export default function RaceScreenPage() {
     const nextState = !isMuted;
     setIsMuted(nextState);
     sounds.setMuted(nextState);
+    if (nextState) {
+      sounds.stopAmbientEngine();
+      setIsAmbientPlaying(false);
+    }
   };
 
   const toggleFullscreen = () => {
@@ -107,9 +154,26 @@ export default function RaceScreenPage() {
 
   const isRevealed = gameState?.status === 'REVEALED' && resultsData !== null;
   const isCaseActive = gameState?.status === 'ACTIVE_CASE';
+  const isSafetyCarActive = gameState?.isSafetyCarActive || false;
   const sectorIndex = gameState?.currentSectorIndex || 1;
   const totalSectors = gameState?.totalSectors || 10;
   const teamTelemetry = gameState?.teamTelemetry || {};
+
+  // Detectar batallas cerradas (distancia entre autos adyacentes < 1.5%)
+  const closeBattleTeamIds = useMemo(() => {
+    const battles = new Set();
+    const list = Object.values(teamTelemetry);
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const gap = Math.abs((list[i].currentDistance || 0) - (list[j].currentDistance || 0));
+        if (gap > 0 && gap <= 1.5) {
+          battles.add(list[i].teamId);
+          battles.add(list[j].teamId);
+        }
+      }
+    }
+    return battles;
+  }, [teamTelemetry]);
 
   return (
     <div className="min-h-screen bg-f1-dark text-slate-100 flex flex-col justify-between p-3 md:p-6 overflow-hidden select-none relative">
@@ -122,7 +186,13 @@ export default function RaceScreenPage() {
         />
       )}
 
-      {/* Header Oficial */}
+      {/* 2. OVERLAY DE VIRTUAL SAFETY CAR */}
+      <SafetyCarOverlay isActive={isSafetyCarActive} />
+
+      {/* 3. ALERTA TELEVISIVA DE ADELANTAMIENTOS */}
+      <OvertakeBanner overtakes={recentOvertakes} />
+
+      {/* Header Oficial F1 */}
       <header className="flex items-center justify-between bg-f1-card px-4 py-3 rounded-2xl border border-f1-border shadow-lg z-10">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-f1-red rounded-xl flex items-center justify-center text-white shadow-md shadow-f1-red/30">
@@ -145,7 +215,7 @@ export default function RaceScreenPage() {
         <div className="flex items-center gap-3">
           {isCaseActive && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-f1-dark rounded-xl border border-f1-border font-mono text-xs text-slate-300">
-              <Users className="w-4 h-4 text-f1-cyan" />
+              <Users className="w-4 h-4 text-f1-cyan animate-pulse" />
               <span>ENVÍOS: {gameState.submissionsCount || 0} / 10 EQUIPOS</span>
             </div>
           )}
@@ -168,6 +238,7 @@ export default function RaceScreenPage() {
           <button
             onClick={toggleMute}
             className="p-2 rounded-xl bg-f1-dark border border-f1-border text-slate-400 hover:text-white transition-colors"
+            title={isMuted ? 'Activar Sonido F1' : 'Silenciar Audio'}
           >
             {isMuted ? <VolumeX className="w-5 h-5 text-red-400" /> : <Volume2 className="w-5 h-5 text-f1-green" />}
           </button>
@@ -180,7 +251,18 @@ export default function RaceScreenPage() {
             <Maximize className="w-5 h-5" />
           </button>
 
-          {/* Solución Óptima ERP */}
+          {/* Debrief Pedagógico NetSuite */}
+          {(isRevealed || gameState?.currentCase) && (
+            <button
+              onClick={() => setShowDebrief(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-f1-cyan/15 hover:bg-f1-cyan/25 text-f1-cyan border border-f1-cyan/40 font-mono font-bold text-xs rounded-xl shadow-md transition-all"
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span className="hidden sm:inline">DEBRIEF PITS</span>
+            </button>
+          )}
+
+          {/* Solución Técnica Óptima ERP */}
           {gameState?.currentCase && (
             <button
               onClick={() => setShowSolution(true)}
@@ -195,10 +277,10 @@ export default function RaceScreenPage() {
           {isRevealed && (
             <button
               onClick={() => setShowPodium(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-mono font-bold text-xs rounded-xl shadow-md transition-all"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-mono font-black text-xs rounded-xl shadow-md transition-all animate-bounce"
             >
               <Trophy className="w-4 h-4" />
-              <span>CLASIFICACIÓN</span>
+              <span>PODIO</span>
             </button>
           )}
         </div>
@@ -216,6 +298,8 @@ export default function RaceScreenPage() {
             positionDelta: 0
           };
 
+          const isCloseBattle = closeBattleTeamIds.has(laneNum);
+
           return (
             <TrackLane
               key={team.id}
@@ -225,19 +309,25 @@ export default function RaceScreenPage() {
               telemetry={telemetry}
               isRevealed={isRevealed}
               isNitroActive={isNitroActive}
+              isCloseBattle={isCloseBattle}
             />
           );
         })}
       </main>
 
-      {/* Footer */}
+      {/* Footer con Indicadores F1 */}
       <footer className="flex items-center justify-between bg-f1-card px-4 py-2 rounded-xl border border-f1-border text-[11px] font-mono text-slate-400">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5">
-            <Compass className="w-3.5 h-3.5 text-f1-cyan" /> CIRCUITO DE 10 SECTORES • AVANCE PROGRESIVO Y ADELANTAMIENTOS EN VIVO
+            <Compass className="w-3.5 h-3.5 text-f1-cyan" /> CIRCUITO DE 10 SECTORES • AVANCE PROGRESIVO • BOOST DRS (+10%) EN P8-P10
           </span>
         </div>
-        <div>
+        <div className="flex items-center gap-3">
+          {isAmbientPlaying && (
+            <span className="flex items-center gap-1 text-[10px] text-f1-green">
+              <span className="w-2 h-2 rounded-full bg-f1-green animate-ping" /> PARRILLA EN VIVO
+            </span>
+          )}
           <span>VELTIS RACING ERP TELEMETRY</span>
         </div>
       </footer>
@@ -254,6 +344,14 @@ export default function RaceScreenPage() {
         <CaseSolutionModal
           caseData={gameState.currentCase}
           onClose={() => setShowSolution(false)}
+        />
+      )}
+
+      {showDebrief && gameState?.currentCase && (
+        <DebriefModal
+          caseData={gameState.currentCase}
+          results={resultsData}
+          onClose={() => setShowDebrief(false)}
         />
       )}
     </div>

@@ -23,7 +23,8 @@ export function SocketProvider({ children }) {
     connectedTeamsCount: 0,
     submissionsCount: 0,
     calculatedResults: null,
-    teamTelemetry: {}
+    teamTelemetry: {},
+    isSafetyCarActive: false
   });
 
   useEffect(() => {
@@ -173,6 +174,31 @@ export function SocketProvider({ children }) {
       return new Promise((resolve) => {
         socket?.emit('admin_reset_championship', resolve);
       });
+    },
+
+    toggleSafetyCar: async (active) => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.toggleSafetyCar(active);
+        return { success: true };
+      }
+      setGameState(prev => ({ ...prev, isSafetyCarActive: active }));
+      socket?.emit('admin_toggle_safety_car', { active });
+      return { success: true };
+    },
+
+    simulate10Teams: async (currentCase, sectorIndex, totalSectors) => {
+      if (isCloudFirebase) {
+        const results = await firebaseRaceEngine.simulate10Teams(currentCase, sectorIndex, totalSectors);
+        return { success: true, results };
+      }
+      const results = await firebaseRaceEngine.simulate10Teams(currentCase, sectorIndex, totalSectors);
+      setGameState(prev => ({
+        ...prev,
+        status: 'REVEALED',
+        calculatedResults: results
+      }));
+      socket?.emit('admin_simulate_10_teams', { results });
+      return { success: true, results };
     }
   };
 
