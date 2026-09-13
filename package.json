@@ -1,7 +1,7 @@
 {
-  "name": "el-gran-premio-de-la-eficiencia",
+  "name": "erp-formula-1",
   "version": "1.0.0",
-  "description": "El Gran Premio de la Eficiencia - Gamificación ERP NetSuite / F1 Pits",
+  "description": "ERP Formula 1 - NetSuite Gamification & Live Telemetry",
   "private": true,
   "scripts": {
     "install:all": "cd server && npm.cmd install && cd ../client && npm.cmd install",
