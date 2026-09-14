@@ -6,11 +6,13 @@ import LiveTelemetry from '../../components/admin/LiveTelemetry';
 import CaseEditor from '../../components/admin/CaseEditor';
 import DebriefModal from '../../components/race/DebriefModal';
 import RouletteModal from '../../components/admin/RouletteModal';
+import QrConnectModal from '../../components/common/QrConnectModal';
+import { exportTrainingReportCsv } from '../../lib/reportExporter';
 import {
   Flag, Play, Lock, Eye, RotateCcw, ShieldCheck, Trophy, Sparkles,
   FastForward, Zap, Compass, Flame, AlertOctagon, Users, BarChart3,
   Radio, Clock, AlertTriangle, CloudRain, ShieldAlert, CheckCircle2,
-  Volume2, ArrowRightLeft, Send, Trash2
+  Volume2, ArrowRightLeft, Send, Trash2, QrCode, FileSpreadsheet
 } from 'lucide-react';
 import { OFFICIAL_TEAMS } from '../../components/participant/PinLogin';
 
@@ -697,9 +699,27 @@ export default function AdminPage() {
   const [notification, setNotification] = useState('');
   const [showDebrief, setShowDebrief] = useState(false);
   const [showRoulette, setShowRoulette] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const [summonTeamId, setSummonTeamId] = useState('1');
   const [summonReason, setSummonReason] = useState('Dinámica en Escenario');
   const [radioText, setRadioText] = useState('');
+
+  const handleExportCsv = async () => {
+    let historyData = {};
+    if (cloudActions?.getChampionshipHistory) {
+      historyData = await cloudActions.getChampionshipHistory();
+    }
+    const res = exportTrainingReportCsv({
+      gameState,
+      telemetry: gameState?.teamTelemetry || {},
+      teamsProfiles: gameState?.teamsProfiles || {},
+      history: historyData
+    });
+    if (res?.success) {
+      setNotification(`📊 Reporte Excel descargado: ${res.filename}`);
+      setTimeout(() => setNotification(''), 4000);
+    }
+  };
 
   const isVSCActive = gameState?.isSafetyCarActive || false;
   const isRedFlagActive = !!gameState?.isRedFlagActive;
@@ -867,23 +887,43 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-f1-dark p-1 rounded-xl border border-f1-border">
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setActiveTab('race')}
-              className={`px-4 py-2 rounded-lg font-mono text-xs font-bold uppercase transition-all ${
-                activeTab === 'race' ? 'bg-f1-yellow text-black shadow-md' : 'text-slate-400 hover:text-white'
-              }`}
+              onClick={() => setShowQrModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-500/40 font-mono text-xs font-bold uppercase flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+              title="Abrir Código QR para conexión instantánea de tablets"
             >
-              Consola de Carrera
+              <QrCode className="w-4 h-4 text-cyan-400" />
+              <span>Conectar Tablets</span>
             </button>
+
             <button
-              onClick={() => setActiveTab('crud')}
-              className={`px-4 py-2 rounded-lg font-mono text-xs font-bold uppercase transition-all ${
-                activeTab === 'crud' ? 'bg-f1-yellow text-black shadow-md' : 'text-slate-400 hover:text-white'
-              }`}
+              onClick={handleExportCsv}
+              className="px-3.5 py-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-bold uppercase flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+              title="Descargar reporte completo de capacitación en formato CSV / Excel"
             >
-              Gestión de Casos (CRUD)
+              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+              <span>Exportar Excel</span>
             </button>
+
+            <div className="flex items-center gap-2 bg-f1-dark p-1 rounded-xl border border-f1-border">
+              <button
+                onClick={() => setActiveTab('race')}
+                className={`px-4 py-2 rounded-lg font-mono text-xs font-bold uppercase transition-all ${
+                  activeTab === 'race' ? 'bg-f1-yellow text-black shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Consola de Carrera
+              </button>
+              <button
+                onClick={() => setActiveTab('crud')}
+                className={`px-4 py-2 rounded-lg font-mono text-xs font-bold uppercase transition-all ${
+                  activeTab === 'crud' ? 'bg-f1-yellow text-black shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Gestión de Casos (CRUD)
+              </button>
+            </div>
           </div>
         </header>
 
@@ -1231,6 +1271,11 @@ export default function AdminPage() {
           teamsProfiles={teamsProfiles}
           onClose={() => setShowRoulette(false)}
         />
+      )}
+
+      {/* Modal de Conexión QR Tablets */}
+      {showQrModal && (
+        <QrConnectModal onClose={() => setShowQrModal(false)} />
       )}
 
       <footer className="mt-8 text-center text-xs font-mono text-slate-500">

@@ -336,6 +336,13 @@ export function SocketProvider({ children }) {
       }));
       socket?.emit('participant_super_boost', { teamId, success });
       return { success: true };
+    },
+
+    getChampionshipHistory: async () => {
+      if (isCloudFirebase) {
+        return await firebaseRaceEngine.getChampionshipHistory();
+      }
+      return {};
     }
   };
 

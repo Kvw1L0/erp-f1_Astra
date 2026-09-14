@@ -9,8 +9,10 @@ import CaseSolutionModal from '../../components/race/CaseSolutionModal';
 import DebriefModal from '../../components/race/DebriefModal';
 import SafetyCarOverlay from '../../components/race/SafetyCarOverlay';
 import OvertakeBanner from '../../components/race/OvertakeBanner';
+import QrConnectModal from '../../components/common/QrConnectModal';
+import { exportTrainingReportCsv } from '../../lib/reportExporter';
 import { sounds } from '../../lib/soundEffects';
-import { Flag, Zap, Volume2, VolumeX, Maximize, Trophy, Clock, Users, Compass, BookOpen, Film, AlertTriangle, TrendingUp, FastForward, AlertOctagon, CloudRain, ShieldAlert } from 'lucide-react';
+import { Flag, Zap, Volume2, VolumeX, Maximize, Trophy, Clock, Users, Compass, BookOpen, Film, AlertTriangle, TrendingUp, FastForward, AlertOctagon, CloudRain, ShieldAlert, QrCode, FileSpreadsheet } from 'lucide-react';
 
 const TEAMS_LIST = [
   { id: 1, name: "Escudería 1 - Red Bull Racing", color: "#3671C6", shortName: "EQ 01" },
@@ -34,6 +36,7 @@ export default function RaceScreenPage() {
   const [showPodium, setShowPodium] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
   const [showDebrief, setShowDebrief] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const [resultsData, setResultsData] = useState(null);
   const [enableCinematic, setEnableCinematic] = useState(true);
   const [recentOvertakes, setRecentOvertakes] = useState([]);
@@ -240,6 +243,19 @@ export default function RaceScreenPage() {
     setShowDebrief(false);
   };
 
+  const handleExportCsv = async () => {
+    let historyData = {};
+    if (cloudActions?.getChampionshipHistory) {
+      historyData = await cloudActions.getChampionshipHistory();
+    }
+    exportTrainingReportCsv({
+      gameState,
+      telemetry: teamTelemetry,
+      teamsProfiles: gameState?.teamsProfiles || {},
+      history: historyData
+    });
+  };
+
   return (
     <div className="min-h-screen bg-carbon text-slate-100 flex flex-col justify-between p-3 md:p-6 select-none overflow-hidden relative selection:bg-f1-red selection:text-white">
       {/* 1. CINEMÁTICA DE VIDEO INTERCALADA (Video 1 o Video 2 de Batalla) */}
@@ -396,6 +412,26 @@ export default function RaceScreenPage() {
             </button>
           )}
 
+          {/* Conectar Tablets (QR) */}
+          <button
+            onClick={() => setShowQrModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-f1-cyan/15 hover:bg-f1-cyan/25 text-f1-cyan border border-f1-cyan/40 font-mono font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
+            title="Desplegar Código QR para conectar las tablets de los participantes"
+          >
+            <QrCode className="w-4 h-4" />
+            <span className="hidden sm:inline">CONECTAR TABLETS</span>
+          </button>
+
+          {/* Exportar Reporte CSV / Excel */}
+          <button
+            onClick={handleExportCsv}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/40 font-mono font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
+            title="Descargar Reporte Ejecutivo de Resultados en CSV / Excel"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span className="hidden lg:inline">REPORTE EXCEL</span>
+          </button>
+
           {/* Toggle Cinemática */}
           <button
             onClick={() => setEnableCinematic(!enableCinematic)}
@@ -496,6 +532,10 @@ export default function RaceScreenPage() {
           results={resultsData || gameState?.calculatedResults}
           onClose={() => setShowDebrief(false)}
         />
+      )}
+
+      {showQrModal && (
+        <QrConnectModal onClose={() => setShowQrModal(false)} />
       )}
     </div>
   );

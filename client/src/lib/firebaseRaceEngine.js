@@ -337,12 +337,13 @@ class FirebaseRaceEngine {
       calculatedAt: Date.now()
     };
 
-    // Guardar en Firebase
+    // Guardar en Firebase y archivar en historial
     await set(ref(this.db, 'f1_race/telemetry'), newTelemetry);
     await update(ref(this.db, 'f1_race/state'), {
       status: 'REVEALED',
       calculatedResults
     });
+    await set(ref(this.db, `f1_race/history/sector_${currentSectorIndex}`), calculatedResults);
 
     return calculatedResults;
   }
@@ -429,6 +430,7 @@ class FirebaseRaceEngine {
 
     await set(ref(this.db, 'f1_race/telemetry'), initialTelemetry);
     await set(ref(this.db, 'f1_race/submissions'), {});
+    await set(ref(this.db, 'f1_race/history'), {});
     await set(ref(this.db, 'f1_race/state'), {
       status: 'LOBBY',
       currentCase: null,
@@ -501,6 +503,7 @@ class FirebaseRaceEngine {
     // Limpiar equipos, envíos y convocatorias
     await set(ref(this.db, 'f1_race/teams'), {});
     await set(ref(this.db, 'f1_race/submissions'), {});
+    await set(ref(this.db, 'f1_race/history'), {});
     await set(ref(this.db, 'f1_race/stage_summon'), null);
     await set(ref(this.db, 'f1_race/radio_message'), null);
     await set(ref(this.db, 'f1_race/telemetry'), initialTelemetry);
@@ -615,6 +618,14 @@ class FirebaseRaceEngine {
         isSuperBoostActive: true
       });
     }
+  }
+
+  // 18. Obtener Historial Completo del Campeonato para Exportación
+  async getChampionshipHistory() {
+    this.init();
+    if (!this.db) return {};
+    const snap = await get(ref(this.db, 'f1_race/history'));
+    return snap.val() || {};
   }
 }
 
