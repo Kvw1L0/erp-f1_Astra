@@ -242,12 +242,15 @@ export default function RaceScreenPage() {
 
   return (
     <div className="min-h-screen bg-carbon text-slate-100 flex flex-col justify-between p-3 md:p-6 select-none overflow-hidden relative selection:bg-f1-red selection:text-white">
-      {/* 1. CINEMÁTICA DE VIDEO INTERCALADA (Video 1 o Video 2) */}
+      {/* 1. CINEMÁTICA DE VIDEO INTERCALADA (Video 1 o Video 2 de Batalla) */}
       {showCinematic && (
         <CinematicVideoModal
           videoType={cinematicType}
           sectorIndex={currentSectorIndex}
           totalSectors={totalSectors}
+          videoUrl={resultsData?.battleVideoUrl || gameState?.currentCase?.battleVideoUrl}
+          battleTitle={resultsData?.battleTitle || gameState?.currentCase?.battleTitle}
+          battleDescription={resultsData?.battleDescription || gameState?.currentCase?.battleDescription}
           onFinish={handleCinematicFinish}
         />
       )}

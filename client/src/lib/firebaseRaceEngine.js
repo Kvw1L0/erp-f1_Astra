@@ -325,6 +325,9 @@ class FirebaseRaceEngine {
     const calculatedResults = {
       caseId: currentCase?.id,
       caseTitle: currentCase?.title,
+      battleVideoUrl: currentCase?.battleVideoUrl || `/videos/sector-${String(currentSectorIndex).padStart(2, '0')}-battle.mp4`,
+      battleTitle: currentCase?.battleTitle || `Batalla en Pista - Sector ${currentSectorIndex}`,
+      battleDescription: currentCase?.battleDescription || 'Cámaras on-board a 340 km/h: calculando telemetría y sobrepasos.',
       sectorIndex: currentSectorIndex,
       totalSectors,
       maxPossibleScore,

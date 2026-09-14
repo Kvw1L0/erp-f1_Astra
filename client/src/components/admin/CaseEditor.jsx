@@ -10,6 +10,9 @@ export default function CaseEditor({ cases, onSaveCase, onDeleteCase, onCancel }
     title: '',
     description: '',
     timeLimitSeconds: 60,
+    battleVideoUrl: '/videos/sector-01-battle.mp4',
+    battleTitle: 'Curva 1: Frenada Extrema a 340 km/h y Adelantamiento por el Vértice',
+    battleDescription: 'Cámaras on-board a ras de asfalto: las escuderías con cierre impecable ganan tracción.',
     steps: []
   });
 
@@ -19,6 +22,9 @@ export default function CaseEditor({ cases, onSaveCase, onDeleteCase, onCancel }
       title: 'Nuevo Gran Premio de Configuración ERP',
       description: 'Describe el escenario de negocio o desafío en Pits...',
       timeLimitSeconds: 60,
+      battleVideoUrl: '/videos/sector-01-battle.mp4',
+      battleTitle: 'Curva 1: Frenada Extrema a 340 km/h y Adelantamiento',
+      battleDescription: 'Cámaras on-board a ras de asfalto: telemetría en tiempo real calculando sobrepasos.',
       steps: [
         {
           id: `step-${Date.now()}-1`,
@@ -38,7 +44,12 @@ export default function CaseEditor({ cases, onSaveCase, onDeleteCase, onCancel }
 
   const handleSelectToEdit = (caseItem) => {
     setSelectedCase(caseItem);
-    setFormData(JSON.parse(JSON.stringify(caseItem)));
+    setFormData({
+      battleVideoUrl: '/videos/sector-01-battle.mp4',
+      battleTitle: '',
+      battleDescription: '',
+      ...JSON.parse(JSON.stringify(caseItem))
+    });
     setIsEditing(true);
   };
 
@@ -134,7 +145,13 @@ export default function CaseEditor({ cases, onSaveCase, onDeleteCase, onCancel }
                     <span className="text-xs font-mono text-slate-500">ID: {c.id}</span>
                   </div>
                   <h4 className="text-base font-bold text-white mb-2">{c.title}</h4>
-                  <p className="text-xs text-slate-400 line-clamp-2 mb-4 font-sans">{c.description}</p>
+                  <p className="text-xs text-slate-400 line-clamp-2 mb-3 font-sans">{c.description}</p>
+                  {c.battleTitle && (
+                    <div className="mb-3 px-2.5 py-1.5 rounded-lg bg-black/50 border border-f1-cyan/20 flex items-center gap-2 text-[10px] font-mono text-f1-cyan">
+                      <span className="text-xs">🎬</span>
+                      <span className="truncate text-slate-300 font-semibold">{c.battleTitle}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-3 border-t border-f1-border/60">
@@ -221,6 +238,77 @@ export default function CaseEditor({ cases, onSaveCase, onDeleteCase, onCancel }
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               className="w-full bg-f1-dark border border-f1-border rounded-xl px-4 py-2.5 text-sm text-white focus:border-f1-yellow focus:outline-none"
             />
+          </div>
+
+          {/* Configuración de Video Cinemático de Batalla */}
+          <div className="bg-f1-dark/60 p-4 rounded-xl border border-f1-border space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold text-f1-yellow uppercase tracking-wider">
+                🎬 CONFIGURACIÓN DEL VIDEO DE BATALLA (AL FINALIZAR LA RONDA)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-mono text-slate-400 uppercase mb-1">
+                  ARCHIVO DE VIDEO (.MP4)
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={formData.battleVideoUrl?.startsWith('/videos/sector-') ? formData.battleVideoUrl : 'custom'}
+                    onChange={(e) => {
+                      if (e.target.value !== 'custom') {
+                        setFormData({ ...formData, battleVideoUrl: e.target.value });
+                      }
+                    }}
+                    className="bg-f1-card border border-f1-border rounded-xl px-3 py-2 text-xs font-mono text-white focus:border-f1-yellow focus:outline-none"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(s => {
+                      const padded = String(s).padStart(2, '0');
+                      return (
+                        <option key={s} value={`/videos/sector-${padded}-battle.mp4`}>
+                          Sector {s}: sector-{padded}-battle.mp4
+                        </option>
+                      );
+                    })}
+                    <option value="custom">Ruta Personalizada...</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={formData.battleVideoUrl || ''}
+                    onChange={(e) => setFormData({ ...formData, battleVideoUrl: e.target.value })}
+                    placeholder="/videos/sector-01-battle.mp4"
+                    className="flex-1 bg-f1-card border border-f1-border rounded-xl px-3 py-2 text-xs font-mono text-slate-200 focus:border-f1-yellow focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono text-slate-400 uppercase mb-1">
+                  TÍTULO DE LA BATALLA EN PISTA
+                </label>
+                <input
+                  type="text"
+                  value={formData.battleTitle || ''}
+                  onChange={(e) => setFormData({ ...formData, battleTitle: e.target.value })}
+                  placeholder="Ej: Curva 1: Frenada Extrema a 340 km/h"
+                  className="w-full bg-f1-card border border-f1-border rounded-xl px-3 py-2 text-xs text-white focus:border-f1-yellow focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-mono text-slate-400 uppercase mb-1">
+                DESCRIPCIÓN DE TELEMETRÍA / CÁMARAS DISRUPTIVAS
+              </label>
+              <input
+                type="text"
+                value={formData.battleDescription || ''}
+                onChange={(e) => setFormData({ ...formData, battleDescription: e.target.value })}
+                placeholder="Ej: Cámaras on-board a ras de asfalto: telemetría en tiempo real calculando sobrepasos..."
+                className="w-full bg-f1-card border border-f1-border rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-f1-yellow focus:outline-none"
+              />
+            </div>
           </div>
 
           {/* LISTA DE PASOS */}
