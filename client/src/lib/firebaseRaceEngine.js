@@ -50,6 +50,30 @@ class FirebaseRaceEngine {
     });
   }
 
+  // 2b. Escuchar perfiles de equipos (subnombres y nómina de integrantes)
+  onTeamsChange(callback) {
+    this.init();
+    if (!this.db) return () => {};
+
+    const teamsRef = ref(this.db, 'f1_race/teams');
+    return onValue(teamsRef, (snapshot) => {
+      const val = snapshot.val();
+      callback(val || {});
+    });
+  }
+
+  // 2c. Escuchar convocatorias a escenario y eventos en vivo
+  onStageSummonChange(callback) {
+    this.init();
+    if (!this.db) return () => {};
+
+    const summonRef = ref(this.db, 'f1_race/stage_summon');
+    return onValue(summonRef, (snapshot) => {
+      const val = snapshot.val();
+      callback(val);
+    });
+  }
+
   // 3. Iniciar un caso / Sector
   async startCase(caseData, sectorIndex = 1, totalSectors = 10) {
     this.init();
@@ -413,6 +437,181 @@ class FirebaseRaceEngine {
       calculatedResults: null,
       isSafetyCarActive: false
     });
+  }
+
+  // 10. Actualizar perfil de equipo (subnombre y nómina de participantes)
+  async updateTeamProfile(teamId, subname, participants) {
+    this.init();
+    if (!this.db) return;
+
+    const numId = Number(teamId);
+    const parsedParticipants = Array.isArray(participants) 
+      ? participants 
+      : String(participants || '').split(',').map(s => s.trim()).filter(Boolean);
+
+    const data = {
+      teamId: numId,
+      subname: String(subname || '').trim(),
+      participants: parsedParticipants,
+      updatedAt: Date.now()
+    };
+
+    await set(ref(this.db, `f1_race/teams/${numId}`), data);
+
+    const telemSnap = await get(ref(this.db, `f1_race/telemetry/${numId}`));
+    if (telemSnap.exists()) {
+      await update(ref(this.db, `f1_race/telemetry/${numId}`), {
+        subname: data.subname,
+        participants: data.participants
+      });
+    }
+    return data;
+  }
+
+  // 11. Hard Reset (Foja Cero / Expulsión total de dispositivos)
+  async hardReset() {
+    this.init();
+    if (!this.db) return;
+
+    const initialTelemetry = {};
+    TEAMS_LIST.forEach((t, idx) => {
+      initialTelemetry[t.id] = {
+        teamId: t.id,
+        teamName: t.name,
+        subname: '',
+        participants: [],
+        shortName: t.shortName,
+        color: t.color,
+        cumulativeScore: 0,
+        previousDistance: 0,
+        currentDistance: 0,
+        previousPosition: idx + 1,
+        currentPosition: idx + 1,
+        positionDelta: 0,
+        lastSectorAdvance: 0,
+        isFastestPerfect: false,
+        isDRSActive: false,
+        isSuperBoostActive: false
+      };
+    });
+
+    // Limpiar equipos, envíos y convocatorias
+    await set(ref(this.db, 'f1_race/teams'), {});
+    await set(ref(this.db, 'f1_race/submissions'), {});
+    await set(ref(this.db, 'f1_race/stage_summon'), null);
+    await set(ref(this.db, 'f1_race/radio_message'), null);
+    await set(ref(this.db, 'f1_race/telemetry'), initialTelemetry);
+
+    // Publicar evento HARD_RESET para que los clientes se auto-expulsen
+    await set(ref(this.db, 'f1_race/state'), {
+      status: 'HARD_RESET',
+      hardResetTimestamp: Date.now(),
+      currentCase: null,
+      currentSectorIndex: 1,
+      totalSectors: 10,
+      startTime: null,
+      durationLimitSeconds: 60,
+      submissionsCount: 0,
+      calculatedResults: null,
+      isSafetyCarActive: false,
+      isRedFlagActive: false,
+      isWetRaceActive: false
+    });
+
+    // Tras 1.5s, volver a LOBBY limpio
+    setTimeout(async () => {
+      try {
+        await update(ref(this.db, 'f1_race/state'), { status: 'LOBBY' });
+      } catch (e) {}
+    }, 1500);
+  }
+
+  // 12. Convocatoria a Escenario (Disparador de Eventos)
+  async triggerStageSummon(teamId, reason = 'Dinámica en Escenario', active = true) {
+    this.init();
+    if (!this.db) return;
+
+    if (!active) {
+      await set(ref(this.db, 'f1_race/stage_summon'), null);
+      return;
+    }
+
+    const numId = Number(teamId);
+    const team = TEAMS_LIST.find(t => t.id === numId);
+    const teamSnap = await get(ref(this.db, `f1_race/teams/${numId}`));
+    const profile = teamSnap.val() || {};
+
+    const summonData = {
+      teamId: numId,
+      teamName: team?.name || `Escudería ${numId}`,
+      subname: profile.subname || '',
+      participants: profile.participants || [],
+      reason,
+      active: true,
+      timestamp: Date.now()
+    };
+
+    await set(ref(this.db, 'f1_race/stage_summon'), summonData);
+    return summonData;
+  }
+
+  // 13. Prórroga de Tiempo (+30s)
+  async extendTimer(extraSeconds = 30) {
+    this.init();
+    if (!this.db) return;
+
+    const stateSnap = await get(ref(this.db, 'f1_race/state'));
+    const curr = stateSnap.val() || {};
+    const newLimit = (Number(curr.durationLimitSeconds) || 60) + Number(extraSeconds);
+
+    await update(ref(this.db, 'f1_race/state'), {
+      durationLimitSeconds: newLimit,
+      timerExtendedAt: Date.now()
+    });
+  }
+
+  // 14. Bandera Roja (Red Flag / Pausa Total)
+  async setRedFlag(isActive) {
+    this.init();
+    if (!this.db) return;
+
+    await update(ref(this.db, 'f1_race/state'), {
+      isRedFlagActive: !!isActive
+    });
+  }
+
+  // 15. Modo Lluvia (Wet Race)
+  async setWetRace(isActive) {
+    this.init();
+    if (!this.db) return;
+
+    await update(ref(this.db, 'f1_race/state'), {
+      isWetRaceActive: !!isActive
+    });
+  }
+
+  // 16. Comunicado de Radio de Pits
+  async sendPitRadioMessage(message) {
+    this.init();
+    if (!this.db) return;
+
+    await set(ref(this.db, 'f1_race/radio_message'), {
+      message: String(message).trim(),
+      timestamp: Date.now()
+    });
+  }
+
+  // 17. Activar Super Boost (+15% de aceleración extra)
+  async activateSuperBoost(teamId, success = true) {
+    this.init();
+    if (!this.db) return;
+
+    const numId = Number(teamId);
+    if (success) {
+      await update(ref(this.db, `f1_race/telemetry/${numId}`), {
+        isSuperBoostActive: true
+      });
+    }
   }
 }
 

@@ -24,7 +24,13 @@ export function SocketProvider({ children }) {
     submissionsCount: 0,
     calculatedResults: null,
     teamTelemetry: {},
-    isSafetyCarActive: false
+    teamsProfiles: {},
+    stageSummon: null,
+    radioMessage: null,
+    isSafetyCarActive: false,
+    isRedFlagActive: false,
+    isWetRaceActive: false,
+    hardResetTimestamp: null
   });
 
   useEffect(() => {
@@ -55,9 +61,27 @@ export function SocketProvider({ children }) {
         }
       });
 
+      // Escuchar perfiles de equipos (subnombres y participantes)
+      const unsubTeams = firebaseRaceEngine.onTeamsChange((teams) => {
+        setGameState(prev => ({
+          ...prev,
+          teamsProfiles: teams || {}
+        }));
+      });
+
+      // Escuchar convocatorias a escenario
+      const unsubSummon = firebaseRaceEngine.onStageSummonChange((summon) => {
+        setGameState(prev => ({
+          ...prev,
+          stageSummon: summon
+        }));
+      });
+
       return () => {
         if (unsubState) unsubState();
         if (unsubTelemetry) unsubTelemetry();
+        if (unsubTeams) unsubTeams();
+        if (unsubSummon) unsubSummon();
       };
     }
 
@@ -199,6 +223,119 @@ export function SocketProvider({ children }) {
       }));
       socket?.emit('admin_simulate_10_teams', { results });
       return { success: true, results };
+    },
+
+    updateTeamProfile: async (teamId, subname, participants) => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.updateTeamProfile(teamId, subname, participants);
+        return { success: true };
+      }
+      setGameState(prev => ({
+        ...prev,
+        teamsProfiles: {
+          ...prev.teamsProfiles,
+          [teamId]: { teamId, subname, participants, updatedAt: Date.now() }
+        }
+      }));
+      socket?.emit('update_team_profile', { teamId, subname, participants });
+      return { success: true };
+    },
+
+    hardReset: async () => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.hardReset();
+        return { success: true };
+      }
+      setGameState(prev => ({
+        ...prev,
+        status: 'HARD_RESET',
+        hardResetTimestamp: Date.now(),
+        currentCase: null,
+        currentSectorIndex: 1,
+        startTime: null,
+        calculatedResults: null,
+        teamsProfiles: {},
+        stageSummon: null,
+        isSafetyCarActive: false,
+        isRedFlagActive: false,
+        isWetRaceActive: false
+      }));
+      socket?.emit('admin_hard_reset');
+      return { success: true };
+    },
+
+    triggerStageSummon: async (teamId, reason, active = true) => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.triggerStageSummon(teamId, reason, active);
+        return { success: true };
+      }
+      const summon = active ? { teamId, reason, active: true, timestamp: Date.now() } : null;
+      setGameState(prev => ({ ...prev, stageSummon: summon }));
+      socket?.emit('admin_stage_summon', { teamId, reason, active });
+      return { success: true };
+    },
+
+    extendTimer: async (extraSeconds = 30) => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.extendTimer(extraSeconds);
+        return { success: true };
+      }
+      setGameState(prev => ({
+        ...prev,
+        durationLimitSeconds: (prev.durationLimitSeconds || 60) + extraSeconds
+      }));
+      socket?.emit('admin_extend_timer', { extraSeconds });
+      return { success: true };
+    },
+
+    setRedFlag: async (active) => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.setRedFlag(active);
+        return { success: true };
+      }
+      setGameState(prev => ({ ...prev, isRedFlagActive: !!active }));
+      socket?.emit('admin_red_flag', { active });
+      return { success: true };
+    },
+
+    setWetRace: async (active) => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.setWetRace(active);
+        return { success: true };
+      }
+      setGameState(prev => ({ ...prev, isWetRaceActive: !!active }));
+      socket?.emit('admin_wet_race', { active });
+      return { success: true };
+    },
+
+    sendPitRadioMessage: async (message) => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.sendPitRadioMessage(message);
+        return { success: true };
+      }
+      const msgObj = { message, timestamp: Date.now() };
+      setGameState(prev => ({ ...prev, radioMessage: msgObj }));
+      socket?.emit('admin_radio_message', msgObj);
+      return { success: true };
+    },
+
+    activateSuperBoost: async (teamId, success = true) => {
+      if (isCloudFirebase) {
+        await firebaseRaceEngine.activateSuperBoost(teamId, success);
+        return { success: true };
+      }
+      setGameState(prev => ({
+        ...prev,
+        teamTelemetry: {
+          ...prev.teamTelemetry,
+          [teamId]: {
+            ...prev.teamTelemetry[teamId],
+            isSuperBoostActive: success
+          }
+        }
+      }));
+      socket?.emit('participant_super_boost', { teamId, success });
+      return { success: true };
     }
   };
 

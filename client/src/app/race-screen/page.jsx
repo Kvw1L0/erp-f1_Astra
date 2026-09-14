@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSocket } from '../../context/SocketContext';
 import TrackLane from '../../components/race/TrackLane';
 import PodiumModal from '../../components/race/PodiumModal';
@@ -10,7 +10,7 @@ import DebriefModal from '../../components/race/DebriefModal';
 import SafetyCarOverlay from '../../components/race/SafetyCarOverlay';
 import OvertakeBanner from '../../components/race/OvertakeBanner';
 import { sounds } from '../../lib/soundEffects';
-import { Flag, Zap, Volume2, VolumeX, Maximize, Trophy, Clock, Users, Compass, BookOpen, Film, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Flag, Zap, Volume2, VolumeX, Maximize, Trophy, Clock, Users, Compass, BookOpen, Film, AlertTriangle, TrendingUp, FastForward, AlertOctagon, CloudRain, ShieldAlert } from 'lucide-react';
 
 const TEAMS_LIST = [
   { id: 1, name: "Escudería 1 - Red Bull Racing", color: "#3671C6", shortName: "EQ 01" },
@@ -26,17 +26,20 @@ const TEAMS_LIST = [
 ];
 
 export default function RaceScreenPage() {
-  const { socket, isConnected, gameState } = useSocket();
+  const { socket, isConnected, gameState, cloudActions } = useSocket();
   const [isMuted, setIsMuted] = useState(false);
-  const [isAmbientPlaying, setIsAmbientPlaying] = useState(false);
   const [isNitroActive, setIsNitroActive] = useState(false);
   const [showCinematic, setShowCinematic] = useState(false);
+  const [cinematicType, setCinematicType] = useState('START'); // 'START' | 'RACE_BATTLE'
   const [showPodium, setShowPodium] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
   const [showDebrief, setShowDebrief] = useState(false);
   const [resultsData, setResultsData] = useState(null);
   const [enableCinematic, setEnableCinematic] = useState(true);
   const [recentOvertakes, setRecentOvertakes] = useState([]);
+  const [isSuspenseWait, setIsSuspenseWait] = useState(false);
+
+  const prevCaseIdRef = useRef(null);
 
   useEffect(() => {
     if (socket && isConnected) {
@@ -48,10 +51,8 @@ export default function RaceScreenPage() {
   useEffect(() => {
     if (gameState?.status === 'ACTIVE_CASE' && !isMuted) {
       sounds.startAmbientEngine();
-      setIsAmbientPlaying(true);
     } else {
       sounds.stopAmbientEngine();
-      setIsAmbientPlaying(false);
     }
 
     return () => {
@@ -59,7 +60,21 @@ export default function RaceScreenPage() {
     };
   }, [gameState?.status, isMuted]);
 
-  // Manejar revelación de resultados con secuencia: Cinemática -> Pista -> Nitro/DRS -> Podio
+  // Manejar inicio de caso con Video 1 (Arranque / Semáforos)
+  useEffect(() => {
+    if (gameState?.status === 'ACTIVE_CASE' && gameState?.currentCase) {
+      const caseId = gameState.currentCase.id;
+      if (caseId !== prevCaseIdRef.current) {
+        prevCaseIdRef.current = caseId;
+        if (enableCinematic) {
+          setCinematicType('START');
+          setShowCinematic(true);
+        }
+      }
+    }
+  }, [gameState?.status, gameState?.currentCase, enableCinematic]);
+
+  // Manejar revelación de resultados con secuencia: Video 2 (Carrera) -> 2s Pausa -> Movimiento Monoplazas
   useEffect(() => {
     if (!socket) return;
 
@@ -84,9 +99,10 @@ export default function RaceScreenPage() {
       }
 
       if (enableCinematic) {
+        setCinematicType('RACE_BATTLE');
         setShowCinematic(true);
       } else {
-        triggerTrackAnimation(results);
+        triggerSuspenseAndTrackAnimation(results);
       }
     });
 
@@ -106,19 +122,29 @@ export default function RaceScreenPage() {
     };
   }, [socket, enableCinematic]);
 
-  const triggerTrackAnimation = (results) => {
+  // Pausa dramática de 2 segundos antes de que los vehículos avancen
+  const triggerSuspenseAndTrackAnimation = (results) => {
     setShowCinematic(false);
+    setIsSuspenseWait(true);
+    sounds.playCountdownTick();
+
+    setTimeout(() => {
+      setIsSuspenseWait(false);
+      triggerTrackAnimation(results);
+    }, 2000);
+  };
+
+  const triggerTrackAnimation = (results) => {
     sounds.stopAmbientEngine();
     sounds.playRaceStart();
 
-    // Pausa dramática de 2 segundos antes del Nitro Boost y DRS
+    // Pausa de 1.8 segundos antes de activar Nitro (+20%) y DRS (+10%)
     const nitroTimer = setTimeout(() => {
       if (results?.fastestPerfectTeamId) {
         setIsNitroActive(true);
         sounds.playNitroBoost();
       }
 
-      // Si hay DRS activado, emitir tono aerodinámico
       const hasDRS = results?.teams?.some(t => t.isDRSActive);
       if (hasDRS) {
         setTimeout(() => sounds.playDRSActive(), 600);
@@ -129,95 +155,242 @@ export default function RaceScreenPage() {
       }, 3500);
 
       return () => clearTimeout(podiumTimer);
-    }, 2000);
+    }, 1800);
 
     return () => clearTimeout(nitroTimer);
+  };
+
+  const handleCinematicFinish = () => {
+    if (cinematicType === 'RACE_BATTLE') {
+      triggerSuspenseAndTrackAnimation(resultsData || gameState?.calculatedResults);
+    } else {
+      setShowCinematic(false);
+    }
   };
 
   const toggleMute = () => {
     const nextState = !isMuted;
     setIsMuted(nextState);
     sounds.setMuted(nextState);
-    if (nextState) {
-      sounds.stopAmbientEngine();
-      setIsAmbientPlaying(false);
-    }
   };
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(err => console.error(err));
+      document.documentElement.requestFullscreen().catch(() => {});
     } else {
-      document.exitFullscreen().catch(err => console.error(err));
+      document.exitFullscreen().catch(() => {});
     }
   };
 
-  const isRevealed = gameState?.status === 'REVEALED' && resultsData !== null;
+  const currentSectorIndex = gameState?.currentSectorIndex || 1;
+  const totalSectors = gameState?.totalSectors || 10;
+  const isRevealed = gameState?.status === 'REVEALED' || resultsData !== null;
   const isCaseActive = gameState?.status === 'ACTIVE_CASE';
   const isSafetyCarActive = gameState?.isSafetyCarActive || false;
-  const sectorIndex = gameState?.currentSectorIndex || 1;
-  const totalSectors = gameState?.totalSectors || 10;
-  const teamTelemetry = gameState?.teamTelemetry || {};
+  const isRedFlagActive = !!gameState?.isRedFlagActive;
+  const isWetRaceActive = !!gameState?.isWetRaceActive;
+  const stageSummon = gameState?.stageSummon;
 
-  // Detectar batallas cerradas (distancia entre autos adyacentes < 1.5%)
+  // Telemetría fusionada con perfiles (subnombres)
+  const teamTelemetry = useMemo(() => {
+    const telem = gameState?.teamTelemetry || {};
+    const profiles = gameState?.teamsProfiles || {};
+    const merged = {};
+
+    TEAMS_LIST.forEach(t => {
+      const base = telem[t.id] || {
+        currentPosition: t.id,
+        currentDistance: 0,
+        previousDistance: 0,
+        positionDelta: 0,
+        cumulativeScore: 0
+      };
+      const prof = profiles[t.id] || {};
+      merged[t.id] = {
+        ...base,
+        subname: prof.subname || base.subname || '',
+        participants: prof.participants || base.participants || []
+      };
+    });
+
+    return merged;
+  }, [gameState?.teamTelemetry, gameState?.teamsProfiles]);
+
+  // Detector de autos en batalla cuerpo a cuerpo (< 3% de distancia)
   const closeBattleTeamIds = useMemo(() => {
-    const battles = new Set();
-    const list = Object.values(teamTelemetry);
-    for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        const gap = Math.abs((list[i].currentDistance || 0) - (list[j].currentDistance || 0));
-        if (gap > 0 && gap <= 1.5) {
-          battles.add(list[i].teamId);
-          battles.add(list[j].teamId);
+    const ids = new Set();
+    const activeEntries = Object.values(teamTelemetry);
+    for (let i = 0; i < activeEntries.length; i++) {
+      for (let j = i + 1; j < activeEntries.length; j++) {
+        const d1 = activeEntries[i].currentDistance || 0;
+        const d2 = activeEntries[j].currentDistance || 0;
+        if (Math.abs(d1 - d2) <= 3 && Math.max(d1, d2) > 0) {
+          ids.add(activeEntries[i].teamId);
+          ids.add(activeEntries[j].teamId);
         }
       }
     }
-    return battles;
+    return ids;
   }, [teamTelemetry]);
 
+  const handleNextSectorFromScreen = async () => {
+    const nextIdx = Math.min(totalSectors, currentSectorIndex + 1);
+    await cloudActions.nextSector(nextIdx, totalSectors);
+    setShowPodium(false);
+    setShowDebrief(false);
+  };
+
   return (
-    <div className="min-h-screen bg-f1-dark text-slate-100 flex flex-col justify-between p-3 md:p-6 overflow-hidden select-none relative">
-      {/* 1. CINEMÁTICA DE VIDEO INTERCALADA */}
+    <div className="min-h-screen bg-carbon text-slate-100 flex flex-col justify-between p-3 md:p-6 select-none overflow-hidden relative selection:bg-f1-red selection:text-white">
+      {/* 1. CINEMÁTICA DE VIDEO INTERCALADA (Video 1 o Video 2) */}
       {showCinematic && (
         <CinematicVideoModal
-          sectorIndex={sectorIndex}
+          videoType={cinematicType}
+          sectorIndex={currentSectorIndex}
           totalSectors={totalSectors}
-          onFinish={() => triggerTrackAnimation(resultsData)}
+          onFinish={handleCinematicFinish}
         />
       )}
 
-      {/* 2. OVERLAY DE VIRTUAL SAFETY CAR */}
+      {/* 2. OVERLAY DE SUSPENSO (2 SEGUNDOS DE PAUSA) */}
+      {isSuspenseWait && (
+        <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in">
+          <div className="bg-f1-card/90 border border-f1-cyan/50 p-6 rounded-3xl text-center shadow-[0_0_50px_rgba(0,240,255,0.4)] space-y-2">
+            <span className="text-xs font-mono text-f1-cyan uppercase tracking-widest font-black animate-pulse">
+              TELEMETRÍA DE PITS CALCULADA
+            </span>
+            <h2 className="text-2xl font-black text-white italic uppercase tracking-tight">
+              ¡LOS VEHÍCULOS SE MUEVEN EN 2 SEGUNDOS!
+            </h2>
+            <div className="w-48 h-1.5 bg-white/20 rounded-full mx-auto overflow-hidden">
+              <div className="h-full bg-f1-cyan animate-pulse" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. ALERTA DE CONVOCATORIA AL ESCENARIO */}
+      {stageSummon?.active && (
+        <div className="fixed top-4 left-4 right-4 z-40 max-w-2xl mx-auto bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white p-4 rounded-2xl shadow-2xl border-2 border-white flex items-center justify-between gap-4 animate-bounce">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="w-8 h-8 text-yellow-300 flex-shrink-0" />
+            <div>
+              <span className="text-[10px] font-mono uppercase text-yellow-300 font-bold block">
+                🚨 CONVOCATORIA OFICIAL DE CARRERA AL ESCENARIO
+              </span>
+              <h3 className="text-base font-black italic uppercase leading-tight">
+                ESCUDERÍA #{stageSummon.teamId} {stageSummon.teamName}
+                {stageSummon.subname && ` - "${stageSummon.subname}"`}
+              </h3>
+              <p className="text-xs text-slate-100 font-sans">
+                Todo el equipo debe presentarse de inmediato con el Facilitador.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => cloudActions.triggerStageSummon(stageSummon.teamId, '', false)}
+            className="px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white font-mono text-xs font-bold transition-all border border-white/30"
+          >
+            CERRAR
+          </button>
+        </div>
+      )}
+
+      {/* 4. OVERLAY DE BANDERA ROJA */}
+      {isRedFlagActive && (
+        <div className="fixed inset-0 z-40 bg-red-950/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-pulse">
+          <div className="max-w-md bg-black/90 p-8 rounded-3xl border-2 border-red-500 shadow-2xl space-y-3">
+            <AlertOctagon className="w-16 h-16 text-red-500 mx-auto" />
+            <span className="text-xs font-mono font-black text-red-400 uppercase tracking-widest block">
+              DIRECCIÓN DE CARRERA • FIA PITS
+            </span>
+            <h2 className="text-3xl font-black text-white italic uppercase">
+              🚨 BANDERA ROJA EN PISTA
+            </h2>
+            <p className="text-sm text-slate-300 font-sans">
+              Carrera temporalmente detenida por el facilitador. Atención a las instrucciones en la sala.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* 5. OVERLAY DE VIRTUAL SAFETY CAR */}
       <SafetyCarOverlay isActive={isSafetyCarActive} />
 
-      {/* 3. ALERTA TELEVISIVA DE ADELANTAMIENTOS */}
+      {/* 6. ALERTA TELEVISIVA DE ADELANTAMIENTOS */}
       <OvertakeBanner overtakes={recentOvertakes} />
 
-      {/* Header Oficial F1 */}
-      <header className="flex items-center justify-between bg-f1-card px-4 py-3 rounded-2xl border border-f1-border shadow-lg z-10">
+      {/* Header Oficial F1 con Claridad Permanente de Caso y Sector */}
+      <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 bg-f1-card px-4 py-3 rounded-2xl border border-f1-border shadow-lg z-10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-f1-red rounded-xl flex items-center justify-center text-white shadow-md shadow-f1-red/30">
+          <div className="w-10 h-10 bg-f1-red rounded-xl flex items-center justify-center text-white shadow-md shadow-f1-red/30 flex-shrink-0">
             <Flag className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-xl md:text-2xl font-black text-white uppercase italic tracking-tight flex items-center gap-2">
-              <span>GRAN PREMIO DE LA EFICIENCIA</span>
-              <span className="text-f1-red text-xs md:text-sm font-mono font-bold bg-f1-red/10 border border-f1-red/30 px-2.5 py-0.5 rounded-full not-italic">
-                SECTOR {sectorIndex} / {totalSectors}
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-lg md:text-xl font-black text-white uppercase italic tracking-tight">
+                GRAN PREMIO DE LA EFICIENCIA
+              </h1>
+              <span className="text-f1-red text-xs font-mono font-black bg-f1-red/10 border border-f1-red/30 px-2.5 py-0.5 rounded-full not-italic">
+                SECTOR {currentSectorIndex} DE {totalSectors}
               </span>
-            </h1>
-            <p className="text-xs font-mono text-slate-400">
-              {gameState?.currentCase?.title ? `TRAMO ACTUAL: ${gameState.currentCase.title}` : 'CIRCUITO LINEAL EN PROCESO'}
+              {isWetRaceActive && (
+                <span className="text-cyan-300 text-xs font-mono font-bold bg-cyan-500/20 border border-cyan-500/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CloudRain className="w-3.5 h-3.5" /> LLUVIA ACTIVA
+                </span>
+              )}
+            </div>
+            <p className="text-xs font-mono text-slate-300 flex items-center gap-1.5 mt-0.5">
+              <span className="text-f1-yellow font-bold">CASO ACTIVO:</span>
+              <span>{gameState?.currentCase?.title || 'SECTOR EN PREPARACIÓN'}</span>
             </p>
           </div>
         </div>
 
         {/* Indicadores y Controles */}
-        <div className="flex items-center gap-3">
-          {isCaseActive && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-f1-dark rounded-xl border border-f1-border font-mono text-xs text-slate-300">
-              <Users className="w-4 h-4 text-f1-cyan animate-pulse" />
-              <span>ENVÍOS: {gameState.submissionsCount || 0} / 10 EQUIPOS</span>
-            </div>
+        <div className="flex items-center gap-2.5 flex-wrap self-end md:self-auto font-mono text-xs">
+          {/* Botón Siguiente Sector (Visible cuando finaliza y revela la ronda) */}
+          {isRevealed && (
+            <button
+              onClick={handleNextSectorFromScreen}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-f1-yellow to-amber-500 hover:from-amber-400 text-black font-black uppercase flex items-center gap-1.5 shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+            >
+              <span>SIGUIENTE CASO / SECTOR</span>
+              <FastForward className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Podio / Clasificación */}
+          {isRevealed && (
+            <button
+              onClick={() => setShowPodium(true)}
+              className="px-3.5 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-mono font-black text-xs rounded-xl shadow-md transition-all animate-bounce flex items-center gap-1.5"
+            >
+              <Trophy className="w-4 h-4" />
+              <span>PODIO</span>
+            </button>
+          )}
+
+          {/* Debrief Pedagógico NetSuite */}
+          {(isRevealed || gameState?.currentCase) && (
+            <button
+              onClick={() => setShowDebrief(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-f1-cyan/15 hover:bg-f1-cyan/25 text-f1-cyan border border-f1-cyan/40 font-mono font-bold text-xs rounded-xl shadow-md transition-all"
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span>DEBRIEF PITS</span>
+            </button>
+          )}
+
+          {/* Solución ERP */}
+          {gameState?.currentCase && (
+            <button
+              onClick={() => setShowSolution(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-f1-dark hover:bg-slate-800 text-slate-200 border border-f1-border font-mono font-bold text-xs rounded-xl shadow-md transition-all"
+            >
+              <BookOpen className="w-4 h-4 text-f1-cyan" />
+              <span>SOLUCIÓN</span>
+            </button>
           )}
 
           {/* Toggle Cinemática */}
@@ -228,10 +401,9 @@ export default function RaceScreenPage() {
                 ? 'bg-f1-cyan/10 border-f1-cyan/40 text-f1-cyan'
                 : 'bg-f1-dark border-f1-border text-slate-500'
             }`}
-            title="Activar/Desactivar Cinemática de Video al revelar"
+            title="Activar/Desactivar cinemáticas de video"
           >
             <Film className="w-4 h-4" />
-            <span className="hidden lg:inline">{enableCinematic ? 'CINEMÁTICA ON' : 'CINEMÁTICA OFF'}</span>
           </button>
 
           {/* Mute */}
@@ -240,7 +412,7 @@ export default function RaceScreenPage() {
             className="p-2 rounded-xl bg-f1-dark border border-f1-border text-slate-400 hover:text-white transition-colors"
             title={isMuted ? 'Activar Sonido F1' : 'Silenciar Audio'}
           >
-            {isMuted ? <VolumeX className="w-5 h-5 text-red-400" /> : <Volume2 className="w-5 h-5 text-f1-green" />}
+            {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-f1-green" />}
           </button>
 
           {/* Fullscreen */}
@@ -248,41 +420,8 @@ export default function RaceScreenPage() {
             onClick={toggleFullscreen}
             className="p-2 rounded-xl bg-f1-dark border border-f1-border text-slate-400 hover:text-white transition-colors"
           >
-            <Maximize className="w-5 h-5" />
+            <Maximize className="w-4 h-4" />
           </button>
-
-          {/* Debrief Pedagógico NetSuite */}
-          {(isRevealed || gameState?.currentCase) && (
-            <button
-              onClick={() => setShowDebrief(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-f1-cyan/15 hover:bg-f1-cyan/25 text-f1-cyan border border-f1-cyan/40 font-mono font-bold text-xs rounded-xl shadow-md transition-all"
-            >
-              <TrendingUp className="w-4 h-4" />
-              <span className="hidden sm:inline">DEBRIEF PITS</span>
-            </button>
-          )}
-
-          {/* Solución Técnica Óptima ERP */}
-          {gameState?.currentCase && (
-            <button
-              onClick={() => setShowSolution(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-f1-dark hover:bg-slate-800 text-slate-200 border border-f1-border font-mono font-bold text-xs rounded-xl shadow-md transition-all"
-            >
-              <BookOpen className="w-4 h-4 text-f1-cyan" />
-              <span className="hidden sm:inline">SOLUCIÓN ERP</span>
-            </button>
-          )}
-
-          {/* Podio / Clasificación */}
-          {isRevealed && (
-            <button
-              onClick={() => setShowPodium(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-mono font-black text-xs rounded-xl shadow-md transition-all animate-bounce"
-            >
-              <Trophy className="w-4 h-4" />
-              <span>PODIO</span>
-            </button>
-          )}
         </div>
       </header>
 
@@ -319,23 +458,24 @@ export default function RaceScreenPage() {
       <footer className="flex items-center justify-between bg-f1-card px-4 py-2 rounded-xl border border-f1-border text-[11px] font-mono text-slate-400">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5">
-            <Compass className="w-3.5 h-3.5 text-f1-cyan" /> CIRCUITO DE 10 SECTORES • AVANCE PROGRESIVO • BOOST DRS (+10%) EN P8-P10
+            <span className="w-2 h-2 rounded-full bg-f1-green animate-ping" />
+            <span>TELEMETRÍA EN TIEMPO REAL ACTIVA</span>
           </span>
+          <span className="hidden sm:inline text-slate-600">|</span>
+          <span className="hidden sm:inline">CIRCUITO: 10 SECTORES • POLE NITRO (+20%) • DRS (+10%) • SUPER BOOST (+15%)</span>
         </div>
-        <div className="flex items-center gap-3">
-          {isAmbientPlaying && (
-            <span className="flex items-center gap-1 text-[10px] text-f1-green">
-              <span className="w-2 h-2 rounded-full bg-f1-green animate-ping" /> PARRILLA EN VIVO
-            </span>
-          )}
-          <span>VELTIS RACING ERP TELEMETRY</span>
+
+        <div>
+          VELTIS RACING • GRAND PRIX ERP
         </div>
       </footer>
 
-      {/* Modales */}
+      {/* MODALES */}
       {showPodium && resultsData && (
         <PodiumModal
           results={resultsData}
+          sectorIndex={currentSectorIndex}
+          totalSectors={totalSectors}
           onClose={() => setShowPodium(false)}
         />
       )}
@@ -347,10 +487,10 @@ export default function RaceScreenPage() {
         />
       )}
 
-      {showDebrief && gameState?.currentCase && (
+      {showDebrief && (
         <DebriefModal
-          caseData={gameState.currentCase}
-          results={resultsData}
+          caseData={gameState?.currentCase}
+          results={resultsData || gameState?.calculatedResults}
           onClose={() => setShowDebrief(false)}
         />
       )}

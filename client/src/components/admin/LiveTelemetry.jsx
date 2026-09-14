@@ -71,9 +71,25 @@ export default function LiveTelemetry({ connectedTeams = {}, submissions = {}, t
                 {statusBadge}
               </div>
 
-              <div className="text-xs font-bold text-slate-300 truncate mb-3">
+              <div className="text-xs font-bold text-slate-200 truncate">
                 {team.name}
               </div>
+              {team.subname && (
+                <div className="text-[11px] font-bold text-f1-yellow truncate italic mb-1.5">
+                  &ldquo;{team.subname}&rdquo;
+                </div>
+              )}
+
+              {/* Nómina de Pilotos */}
+              {team.participants && team.participants.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {team.participants.map((p, i) => (
+                    <span key={i} className="px-1.5 py-0.2 rounded bg-white/10 text-slate-300 text-[9px] font-mono truncate max-w-[80px]">
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <div className="pt-2 border-t border-f1-border/50 text-[11px] font-mono space-y-1">
                 <div className="flex justify-between text-slate-400">

@@ -12,6 +12,17 @@ body {
   background-color: rgb(var(--background-rgb));
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow-x: hidden;
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Blindaje iOS Safari: evitar zoom automático al enfocar inputs */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* Patrón de fibra de carbono para ambiente de pits */

@@ -377,8 +377,8 @@ class SoundEngine {
     });
   }
 
-  // 12. Clic Táctil de Selección
-  playSelect() {
+  // 13. Sirena de Convocatoria a Escenario
+  playStageSummon() {
     if (this.muted) return;
     this.ensureContext();
     if (!this.ctx) return;
@@ -387,20 +387,83 @@ class SoundEngine {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
 
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(540, this.ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.06);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(880, this.ctx.currentTime + 0.25);
+      osc.frequency.linearRampToValueAtTime(440, this.ctx.currentTime + 0.5);
+      osc.frequency.linearRampToValueAtTime(880, this.ctx.currentTime + 0.75);
+      osc.frequency.linearRampToValueAtTime(440, this.ctx.currentTime + 1.0);
 
-      gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.06);
+      gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1.2);
 
       osc.connect(gain);
       gain.connect(this.ctx.destination);
 
       osc.start();
-      osc.stop(this.ctx.currentTime + 0.06);
+      osc.stop(this.ctx.currentTime + 1.2);
+    } catch (e) {}
+  }
+
+  // 14. Clic de Ruleta Giratoria
+  playRouletteTick() {
+    if (this.muted) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1200, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.03);
+
+      gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.03);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.03);
+    } catch (e) {}
+  }
+
+  // 15. Fanfarria de Ganador de Ruleta
+  playRouletteWinner() {
+    if (this.muted) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      notes.forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime + idx * 0.12);
+
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime + idx * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + idx * 0.12 + 0.4);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(this.ctx.currentTime + idx * 0.12);
+        osc.stop(this.ctx.currentTime + idx * 0.12 + 0.4);
+      });
     } catch (e) {}
   }
 }
+
+export const triggerHaptic = (pattern = [40, 30, 40]) => {
+  if (typeof window !== 'undefined' && 'vibrate' in navigator && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate(pattern);
+    } catch (e) {}
+  }
+};
 
 export const sounds = new SoundEngine();

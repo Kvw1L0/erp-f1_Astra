@@ -5,7 +5,14 @@ import { useSocket } from '../../context/SocketContext';
 import LiveTelemetry from '../../components/admin/LiveTelemetry';
 import CaseEditor from '../../components/admin/CaseEditor';
 import DebriefModal from '../../components/race/DebriefModal';
-import { Flag, Play, Lock, Eye, RotateCcw, ShieldCheck, Trophy, Sparkles, FastForward, Zap, Compass, Flame, AlertOctagon, Users, BarChart3 } from 'lucide-react';
+import RouletteModal from '../../components/admin/RouletteModal';
+import {
+  Flag, Play, Lock, Eye, RotateCcw, ShieldCheck, Trophy, Sparkles,
+  FastForward, Zap, Compass, Flame, AlertOctagon, Users, BarChart3,
+  Radio, Clock, AlertTriangle, CloudRain, ShieldAlert, CheckCircle2,
+  Volume2, ArrowRightLeft, Send, Trash2
+} from 'lucide-react';
+import { OFFICIAL_TEAMS } from '../../components/participant/PinLogin';
 
 const DEFAULT_CASES = [
   {
@@ -145,63 +152,20 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState('');
   const [showDebrief, setShowDebrief] = useState(false);
+  const [showRoulette, setShowRoulette] = useState(false);
+  const [summonTeamId, setSummonTeamId] = useState('1');
+  const [summonReason, setSummonReason] = useState('Dinámica en Escenario');
+  const [radioText, setRadioText] = useState('');
 
   const isVSCActive = gameState?.isSafetyCarActive || false;
-
-  const handleToggleVSC = async () => {
-    setIsLoading(true);
-    const newStatus = !isVSCActive;
-    await cloudActions.toggleSafetyCar(newStatus);
-    setIsLoading(false);
-    setNotification(newStatus ? '⚠️ Virtual Safety Car DESPLEGADO. Velocidades limitadas al 50%.' : '🟢 Virtual Safety Car FINALIZADO. Carrera relanzada.');
-    setTimeout(() => setNotification(''), 4000);
-  };
-
-  const handleSimulate10Teams = async () => {
-    setIsLoading(true);
-    const res = await cloudActions.simulate10Teams(selectedCase, currentSector, totalSectors);
-    setIsLoading(false);
-    if (res?.success) {
-      setNotification('🏎️ Simulación de 10 Escuderías en vivo ejecutada con telemetría completa.');
-      setTimeout(() => setNotification(''), 4000);
-    }
-  };
-
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-
-  useEffect(() => {
-    // Intentar cargar casos desde API REST local si está disponible
-    fetch(`${API_URL}/cases`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.data?.length > 0) {
-          setCases(data.data);
-          setSelectedCaseId(data.data[0].id);
-        }
-      })
-      .catch(() => {
-        // Usar casos por defecto
-      });
-  }, [API_URL]);
-
-  useEffect(() => {
-    if (socket && isConnected) {
-      socket.emit('join_admin');
-      socket.on('admin_state_sync', setAdminState);
-      socket.on('admin_telemetry_update', setAdminState);
-
-      return () => {
-        socket.off('admin_state_sync');
-        socket.off('admin_telemetry_update');
-      };
-    }
-  }, [socket, isConnected]);
-
+  const isRedFlagActive = !!gameState?.isRedFlagActive;
+  const isWetRaceActive = !!gameState?.isWetRaceActive;
   const currentSector = gameState?.currentSectorIndex || 1;
   const totalSectors = gameState?.totalSectors || 10;
   const currentStatus = gameState?.status || 'LOBBY';
 
   const selectedCase = cases.find(c => c.id === selectedCaseId) || cases[0];
+  const teamsProfiles = gameState?.teamsProfiles || {};
 
   const handleStartCase = async () => {
     setIsLoading(true);
@@ -218,7 +182,7 @@ export default function AdminPage() {
     const res = await cloudActions.autoFinishCase(selectedCase, currentSector, totalSectors);
     setIsLoading(false);
     if (res?.success) {
-      setNotification('⚡ Caso finalizado automáticamente con telemetría y animación en la nube.');
+      setNotification('⚡ Ronda finalizada: Video 2 activado en pantalla y cálculo de avances en curso.');
       setTimeout(() => setNotification(''), 4000);
     }
   };
@@ -232,14 +196,79 @@ export default function AdminPage() {
     }
   };
 
-  const handleResetChampionship = async () => {
-    if (confirm('¿Deseas reiniciar TODOS los sectores y volver los autos a la línea de largada (0%)?')) {
-      const res = await cloudActions.resetChampionship();
-      if (res?.success) {
-        setNotification('🏆 Campeonato reiniciado a la largada (0%).');
-        setTimeout(() => setNotification(''), 3000);
-      }
+  const handleToggleVSC = async () => {
+    setIsLoading(true);
+    const newStatus = !isVSCActive;
+    await cloudActions.toggleSafetyCar(newStatus);
+    setIsLoading(false);
+    setNotification(newStatus ? '⚠️ Virtual Safety Car DESPLEGADO (Brechas comprimidas al 50%).' : '🟢 Virtual Safety Car FINALIZADO.');
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  const handleToggleRedFlag = async () => {
+    const newStatus = !isRedFlagActive;
+    await cloudActions.setRedFlag(newStatus);
+    setNotification(newStatus ? '🚨 BANDERA ROJA ACTIVADA: Carrera detenida en todas las pantallas.' : '🟢 Bandera Roja levantada. Carrera reanudada.');
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  const handleExtendTimer = async () => {
+    await cloudActions.extendTimer(30);
+    setNotification('⏱️ +30 Segundos añadidos en tiempo real al cronómetro.');
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  const handleToggleWetRace = async () => {
+    const newStatus = !isWetRaceActive;
+    await cloudActions.setWetRace(newStatus);
+    setNotification(newStatus ? '🌧️ PISTA MOJADA: Modo lluvia activo en pantalla gigante.' : '☀️ Pista Seca restaurada.');
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  const handleSendRadio = async (e) => {
+    if (e) e.preventDefault();
+    if (!radioText.trim()) return;
+    await cloudActions.sendPitRadioMessage(radioText);
+    setRadioText('');
+    setNotification('📢 Comunicado de radio transmitido a todas las tablets.');
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  const handleTriggerSummon = async () => {
+    await cloudActions.triggerStageSummon(summonTeamId, summonReason, true);
+    setNotification(`📣 Escudería #${summonTeamId} convocada al escenario.`);
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  const handleCancelSummon = async () => {
+    await cloudActions.triggerStageSummon(summonTeamId, '', false);
+    setNotification(`Alerta de convocatoria cancelada.`);
+    setTimeout(() => setNotification(''), 3000);
+  };
+
+  const handleSimulate10Teams = async () => {
+    setIsLoading(true);
+    const res = await cloudActions.simulate10Teams(selectedCase, currentSector, totalSectors);
+    setIsLoading(false);
+    if (res?.success) {
+      setNotification('🏎️ Simulación de 10 Escuderías en vivo ejecutada.');
+      setTimeout(() => setNotification(''), 4000);
     }
+  };
+
+  // Hard Reset de máxima seguridad (Foja Cero)
+  const handleHardReset = async () => {
+    const confirmed = confirm('⚠️ ¿ESTÁS SEGURO DE EJECUTAR UN RESET TOTAL?\n\nEsta acción:\n- EXPULSARÁ a TODAS las tablets conectadas a la pantalla inicial de PIN.\n- BORRARÁ las sesiones de los participantes y nóminas.\n- REINICIARÁ el campeonato y los 10 monoplazas al 0% (foja cero).\n- Limpiará todas las alertas de carrera.');
+    if (!confirmed) return;
+
+    const secondCheck = confirm('Última confirmación: ¿Proceder con el HARD RESET TOTAL?');
+    if (!secondCheck) return;
+
+    setIsLoading(true);
+    await cloudActions.hardReset();
+    setIsLoading(false);
+    setNotification('🔥 RESET TOTAL COMPLETADO: Todos los dispositivos expulsados y campeonato en foja cero.');
+    setTimeout(() => setNotification(''), 5000);
   };
 
   const handleSaveCase = (caseData, existingId) => {
@@ -268,13 +297,18 @@ export default function AdminPage() {
               <ShieldCheck className="w-7 h-7" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl font-black text-white uppercase italic tracking-tight">
                   Dirección de Carrera <span className="text-f1-yellow">F1 Pits</span>
                 </h1>
                 {isCloudFirebase && (
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold flex items-center gap-1">
                     <Flame className="w-3 h-3 text-amber-400" /> FIREBASE CLOUD
+                  </span>
+                )}
+                {isRedFlagActive && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-red-600 text-white font-mono text-[10px] font-black uppercase flex items-center gap-1 animate-pulse">
+                    🚨 BANDERA ROJA ACTIVA
                   </span>
                 )}
               </div>
@@ -314,7 +348,7 @@ export default function AdminPage() {
 
         {activeTab === 'race' && (
           <div className="space-y-6">
-            {/* Controles de Carrera */}
+            {/* 1. Panel de Control de Carrera */}
             <div className="bg-f1-card p-6 rounded-2xl border border-f1-border space-y-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-f1-border">
                 <div className="flex items-center gap-4">
@@ -348,125 +382,266 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* Botones de Control */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* 1. Iniciar Caso */}
-                <button
-                  type="button"
-                  onClick={handleStartCase}
-                  disabled={isLoading || currentStatus === 'ACTIVE_CASE'}
-                  className={`p-4 rounded-xl font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all shadow-lg ${
-                    currentStatus === 'ACTIVE_CASE'
-                      ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-f1-green to-emerald-600 hover:from-emerald-500 text-black shadow-f1-green/20 active:scale-95'
-                  }`}
-                >
-                  <Play className="w-5 h-5 fill-current" />
-                  <span>1. INICIAR CASO</span>
-                  <span className="text-[9px] opacity-75 font-normal">Habilita tablets</span>
-                </button>
+              {/* Fila 1: Botones de Operación de Carrera */}
+              <div>
+                <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-2">
+                  1. OPERACIÓN DE RONDA (FLUJO PRINCIPAL):
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* 1. Iniciar Caso con Video 1 */}
+                  <button
+                    type="button"
+                    onClick={handleStartCase}
+                    disabled={isLoading || currentStatus === 'ACTIVE_CASE'}
+                    className={`p-4 rounded-xl font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all shadow-lg ${
+                      currentStatus === 'ACTIVE_CASE'
+                        ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-f1-green to-emerald-600 hover:from-emerald-500 text-black shadow-f1-green/20 active:scale-95'
+                    }`}
+                  >
+                    <Play className="w-5 h-5 fill-current" />
+                    <span>1. INICIAR RONDA</span>
+                    <span className="text-[9px] opacity-85 font-normal">Video 1 Arranque & Habilita tablets</span>
+                  </button>
 
-                {/* 2. Finalizar Automáticamente */}
-                <button
-                  type="button"
-                  onClick={handleAutoFinishCase}
-                  disabled={isLoading}
-                  className="p-4 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all shadow-lg shadow-cyan-500/20 active:scale-95 border border-cyan-400/40"
-                >
-                  <Zap className="w-5 h-5 fill-current" />
-                  <span>⚡ FINALIZAR AUTO</span>
-                  <span className="text-[9px] opacity-90 font-normal">Simula y revela en 1 clic</span>
-                </button>
+                  {/* 2. Finalizar Automáticamente con Video 2 */}
+                  <button
+                    type="button"
+                    onClick={handleAutoFinishCase}
+                    disabled={isLoading}
+                    className="p-4 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all shadow-lg shadow-cyan-500/20 active:scale-95 border border-cyan-400/40"
+                  >
+                    <Zap className="w-5 h-5 fill-current" />
+                    <span>2. FINALIZAR RONDA</span>
+                    <span className="text-[9px] opacity-90 font-normal">Video 2 Batalla + 2s + Avance</span>
+                  </button>
 
-                {/* 3. Siguiente Sector */}
-                <button
-                  type="button"
-                  onClick={handleNextSector}
-                  disabled={isLoading}
-                  className="p-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-f1-border font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
-                >
-                  <FastForward className="w-5 h-5 text-f1-yellow" />
-                  <span>3. SIGUIENTE SECTOR</span>
-                  <span className="text-[9px] opacity-60 font-normal">Conserva kilometraje</span>
-                </button>
+                  {/* 3. Siguiente Sector */}
+                  <button
+                    type="button"
+                    onClick={handleNextSector}
+                    disabled={isLoading}
+                    className="p-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-f1-border font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <FastForward className="w-5 h-5 text-f1-yellow" />
+                    <span>3. SIGUIENTE SECTOR</span>
+                    <span className="text-[9px] opacity-60 font-normal">Conserva kilometraje acumulado</span>
+                  </button>
 
-                {/* 4. Reiniciar Campeonato */}
-                <button
-                  type="button"
-                  onClick={handleResetChampionship}
-                  disabled={isLoading}
-                  className="p-4 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
-                >
-                  <Trophy className="w-5 h-5 text-red-400" />
-                  <span>4. REINICIAR (0%)</span>
-                  <span className="text-[9px] opacity-60 font-normal">Vuelve a la largada</span>
-                </button>
+                  {/* 4. Simulación 10 Escuderías */}
+                  <button
+                    type="button"
+                    onClick={handleSimulate10Teams}
+                    disabled={isLoading}
+                    className="p-4 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-500 text-white font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all shadow-lg shadow-purple-600/25 active:scale-95 border border-purple-400/30"
+                  >
+                    <Users className="w-5 h-5 fill-current" />
+                    <span>🏎️ SIMULAR 10 EQUIPOS</span>
+                    <span className="text-[9px] opacity-85 font-normal">Demo instantánea de carrera</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Botones Especiales de Dirección y Demo (Fila 2) */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                {/* 5. Simulación 10 Escuderías en Vivo */}
-                <button
-                  type="button"
-                  onClick={handleSimulate10Teams}
-                  disabled={isLoading}
-                  className="p-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-500 hover:to-pink-500 text-white font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-600/25 active:scale-95 border border-purple-400/30"
-                >
-                  <Users className="w-4 h-4 fill-current" />
-                  <div className="text-left">
-                    <span className="block leading-tight">🏎️ SIMULAR 10 ESCUDERÍAS</span>
-                    <span className="text-[9px] opacity-80 font-normal">Demo instantánea con telemetría</span>
-                  </div>
-                </button>
+              {/* Fila 2: Controles Tácticos de Dirección de Carrera */}
+              <div className="pt-2 border-t border-f1-border/40">
+                <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-2">
+                  2. CONTROLES TÁCTICOS EN VIVO:
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                  {/* Ruleta de Pilotos */}
+                  <button
+                    type="button"
+                    onClick={() => setShowRoulette(true)}
+                    className="p-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1 transition-all active:scale-95"
+                  >
+                    <span className="text-base">🎡</span>
+                    <span>Ruleta Pilotos</span>
+                  </button>
 
-                {/* 6. Virtual Safety Car (VSC) Toggle */}
-                <button
-                  type="button"
-                  onClick={handleToggleVSC}
-                  disabled={isLoading}
-                  className={`p-3.5 rounded-xl font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 border ${
-                    isVSCActive
-                      ? 'bg-amber-500 text-black border-amber-300 animate-pulse shadow-amber-500/40'
-                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
-                  }`}
-                >
-                  <AlertOctagon className="w-4 h-4 fill-current" />
-                  <div className="text-left">
-                    <span className="block leading-tight">{isVSCActive ? '⚠️ DESACTIVAR VSC' : '⚠️ VIRTUAL SAFETY CAR'}</span>
-                    <span className="text-[9px] opacity-80 font-normal">{isVSCActive ? 'Compresión activa (50%)' : 'Comprimir brechas 50%'}</span>
-                  </div>
-                </button>
+                  {/* Virtual Safety Car Toggle */}
+                  <button
+                    type="button"
+                    onClick={handleToggleVSC}
+                    disabled={isLoading}
+                    className={`p-3 rounded-xl font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1 transition-all active:scale-95 border ${
+                      isVSCActive
+                        ? 'bg-amber-500 text-black border-amber-300 animate-pulse shadow-amber-500/40'
+                        : 'bg-slate-800 text-amber-300 border-amber-500/30 hover:bg-amber-500/10'
+                    }`}
+                  >
+                    <AlertOctagon className="w-4 h-4" />
+                    <span>{isVSCActive ? 'Desactivar VSC' : 'Safety Car'}</span>
+                  </button>
 
-                {/* 7. Debrief de Pits Modal */}
-                <button
-                  type="button"
-                  onClick={() => setShowDebrief(true)}
-                  className="p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-f1-cyan border border-f1-cyan/40 font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all active:scale-95"
-                >
-                  <BarChart3 className="w-4 h-4 text-f1-cyan" />
-                  <div className="text-left">
-                    <span className="block leading-tight">📊 DEBRIEF DE PITS (MÉTRICAS)</span>
-                    <span className="text-[9px] opacity-80 font-normal">Análisis ROI & Adopción NetSuite</span>
-                  </div>
-                </button>
+                  {/* Bandera Roja Toggle */}
+                  <button
+                    type="button"
+                    onClick={handleToggleRedFlag}
+                    className={`p-3 rounded-xl font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1 transition-all active:scale-95 border ${
+                      isRedFlagActive
+                        ? 'bg-red-600 text-white border-red-300 animate-pulse'
+                        : 'bg-slate-800 text-red-400 border-red-500/30 hover:bg-red-500/10'
+                    }`}
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>{isRedFlagActive ? 'Reanudar Carrera' : 'Bandera Roja'}</span>
+                  </button>
+
+                  {/* Prórroga +30s */}
+                  <button
+                    type="button"
+                    onClick={handleExtendTimer}
+                    className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1 transition-all active:scale-95"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>+30s Prórroga</span>
+                  </button>
+
+                  {/* Modo Lluvia */}
+                  <button
+                    type="button"
+                    onClick={handleToggleWetRace}
+                    className={`p-3 rounded-xl font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1 transition-all active:scale-95 border ${
+                      isWetRaceActive
+                        ? 'bg-cyan-500 text-black border-cyan-300 animate-pulse'
+                        : 'bg-slate-800 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/10'
+                    }`}
+                  >
+                    <CloudRain className="w-4 h-4" />
+                    <span>{isWetRaceActive ? 'Pista Seca' : 'Modo Lluvia'}</span>
+                  </button>
+
+                  {/* Debrief NetSuite */}
+                  <button
+                    type="button"
+                    onClick={() => setShowDebrief(true)}
+                    className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-f1-cyan border border-f1-cyan/40 font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1 transition-all active:scale-95"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    <span>Debrief Pits</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-f1-border/60 flex flex-wrap justify-between items-center gap-4 text-xs font-mono text-slate-400">
-                <div className="flex items-center gap-2">
-                  <Compass className="w-4 h-4 text-f1-cyan" />
-                  <span>10 SECTORES • 10% BASE POR TRAMO • +12% CON POLE POSITION BOOST</span>
+              {/* Fila 3: Convocatoria a Escenario & Comunicado de Radio */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-f1-border/40">
+                {/* Convocatoria al Escenario */}
+                <div className="bg-f1-dark/80 p-4 rounded-xl border border-f1-border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono text-f1-yellow font-bold uppercase flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4" />
+                      <span>Convocatoria al Escenario (En Vivo)</span>
+                    </span>
+                    {gameState?.stageSummon?.active && (
+                      <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px] font-mono font-bold animate-pulse">
+                        LLAMADO ACTIVO: #{gameState.stageSummon.teamId}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={summonTeamId}
+                      onChange={(e) => setSummonTeamId(e.target.value)}
+                      className="bg-f1-card border border-f1-border rounded-xl px-3 py-2 text-xs font-mono text-white flex-1 focus:outline-none"
+                    >
+                      {OFFICIAL_TEAMS.map(t => {
+                        const prof = teamsProfiles[t.id] || {};
+                        const sub = prof.subname ? ` ("${prof.subname}")` : '';
+                        const partsCount = (prof.participants || []).length;
+                        return (
+                          <option key={t.id} value={t.id}>
+                            #{t.id} {t.name}{sub} {partsCount > 0 ? `• ${partsCount} pilotos` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={handleTriggerSummon}
+                      className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono font-bold text-xs uppercase transition-all flex items-center gap-1 shadow-md shadow-red-600/30"
+                    >
+                      <span>Llamar</span>
+                    </button>
+
+                    {gameState?.stageSummon?.active && (
+                      <button
+                        type="button"
+                        onClick={handleCancelSummon}
+                        className="px-3 py-2 rounded-xl bg-slate-800 text-slate-300 font-mono text-xs uppercase"
+                      >
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  ⚡ Sincronización en tiempo real activa
+
+                {/* Comunicado de Radio */}
+                <form onSubmit={handleSendRadio} className="bg-f1-dark/80 p-4 rounded-xl border border-f1-border space-y-3">
+                  <span className="text-xs font-mono text-cyan-300 font-bold uppercase flex items-center gap-1.5">
+                    <Radio className="w-4 h-4" />
+                    <span>Comunicado de Radio Pits a las Tablets</span>
+                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={radioText}
+                      onChange={(e) => setRadioText(e.target.value)}
+                      placeholder="Ej: Atención con el 3-way matching en el Paso 3..."
+                      className="bg-f1-card border border-f1-border rounded-xl px-3 py-2 text-xs font-mono text-white flex-1 focus:outline-none focus:border-cyan-400"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!radioText.trim()}
+                      className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-mono font-bold text-xs uppercase flex items-center gap-1"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Transmitir</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Fila 4: Zona de Peligro / Foja Cero */}
+              <div className="pt-4 border-t border-red-500/20 flex flex-col sm:flex-row items-center justify-between gap-3 bg-red-950/20 p-4 rounded-xl border border-red-900/40">
+                <div className="flex items-center gap-2.5">
+                  <Trash2 className="w-5 h-5 text-red-400 flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-mono font-black text-red-400 uppercase block">
+                      ZONA DE REINICIO TOTAL • FOJA CERO
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-sans">
+                      Expulsa a todos los dispositivos, borra sesiones de tablets y vuelve los autos a la largada (0%).
+                    </span>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleHardReset}
+                  disabled={isLoading}
+                  className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono font-black text-xs uppercase transition-all shadow-lg shadow-red-600/30 active:scale-95 flex items-center gap-2"
+                >
+                  <Flame className="w-4 h-4" />
+                  <span>RESET TOTAL (FOJA CERO)</span>
+                </button>
               </div>
             </div>
 
-            {/* Monitor de Telemetría */}
+            {/* Monitor de Telemetría con Nómina de Integrantes */}
             <LiveTelemetry
               connectedTeams={adminState?.connectedTeams || {}}
               submissions={adminState?.submissions || {}}
-              teamsList={Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `Escudería ${i + 1}`, shortName: `EQ 0${i + 1}`, color: '#E10600' }))}
+              teamsList={OFFICIAL_TEAMS.map(t => ({
+                id: t.id,
+                name: t.name,
+                shortName: t.shortName,
+                color: t.color,
+                subname: teamsProfiles[t.id]?.subname || '',
+                participants: teamsProfiles[t.id]?.participants || []
+              }))}
             />
           </div>
         )}
@@ -480,11 +655,20 @@ export default function AdminPage() {
         )}
       </div>
 
+      {/* Modal de Debrief NetSuite */}
       {showDebrief && (
         <DebriefModal
           caseData={selectedCase}
           results={gameState?.calculatedResults}
           onClose={() => setShowDebrief(false)}
+        />
+      )}
+
+      {/* Modal de Ruleta de Pilotos */}
+      {showRoulette && (
+        <RouletteModal
+          teamsProfiles={teamsProfiles}
+          onClose={() => setShowRoulette(false)}
         />
       )}
 

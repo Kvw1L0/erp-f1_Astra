@@ -6,6 +6,14 @@ export const metadata = {
   description: 'Aplicación web interactiva en tiempo real para eventos corporativos y capacitación ERP con temática de Fórmula 1 y Cultura Pits.',
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#0B0D13',
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="es" className="dark">

@@ -76,7 +76,7 @@ export default function TrackLane({
         {/* Barra de color de escudería */}
         <div className="w-1.5 h-8 rounded-full" style={{ backgroundColor: team.color || '#E10600' }} />
 
-        {/* Nombre de Equipo */}
+        {/* Nombre de Equipo y Subnombre */}
         <div className="truncate flex-1">
           <div className="flex items-center gap-1.5">
             <span className="text-xs md:text-sm font-bold text-white block truncate leading-tight">
@@ -87,10 +87,21 @@ export default function TrackLane({
                 BATTLE
               </span>
             )}
+            {telemetry?.isSuperBoostActive && (
+              <span className="px-1 py-0.2 rounded bg-purple-500 text-white font-mono font-black text-[9px] uppercase animate-pulse">
+                BOOST
+              </span>
+            )}
           </div>
-          <span className="text-[10px] font-mono text-slate-400 truncate block">
-            {telemetry?.cumulativeScore || 0} pts acumulados
-          </span>
+          {(telemetry?.subname || team.subname) ? (
+            <span className="text-[10px] font-bold text-f1-yellow truncate block leading-tight">
+              {telemetry?.subname || team.subname}
+            </span>
+          ) : (
+            <span className="text-[10px] font-mono text-slate-400 truncate block">
+              {telemetry?.cumulativeScore || 0} pts acumulados
+            </span>
+          )}
         </div>
       </div>
 
@@ -140,6 +151,14 @@ export default function TrackLane({
             <div className="absolute -top-6 left-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500 text-black font-mono font-black text-[9px] uppercase shadow-[0_0_10px_#10B981] animate-pulse">
               <Wind className="w-3 h-3" />
               <span>DRS +10%</span>
+            </div>
+          )}
+
+          {/* Badge Flotante Super Boost si está activo */}
+          {telemetry?.isSuperBoostActive && (
+            <div className="absolute -top-6 right-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-600 text-white font-mono font-black text-[9px] uppercase shadow-[0_0_15px_#A855F7] animate-pulse">
+              <Zap className="w-3 h-3 fill-yellow-300 text-yellow-300" />
+              <span>BOOST +15%</span>
             </div>
           )}
 
