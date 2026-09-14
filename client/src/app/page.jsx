@@ -141,7 +141,7 @@ export default function HomePage() {
         <div className="flex items-center gap-4">
           <span>SISTEMA DE TELEMETRÍA VELTIS ERP</span>
           <span>•</span>
-          <span>ESTADO: {gameState.status}</span>
+          <span>ESTADO: {gameState?.status || 'LOBBY'}</span>
         </div>
         <div>
           <span>REGLA POLE POSITION BOOST: 100% PUNTAJE + MENOR TIEMPO SERVIDOR = +20% DISTANCIA</span>

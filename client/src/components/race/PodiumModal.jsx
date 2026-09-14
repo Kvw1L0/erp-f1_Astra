@@ -5,11 +5,11 @@ import confetti from 'canvas-confetti';
 import { Trophy, Medal, Zap, Clock, X, Flag, CheckCircle2, ChevronRight } from 'lucide-react';
 
 export default function PodiumModal({ results, onClose }) {
-  const ranking = results?.ranking || [];
+  const ranking = Array.isArray(results?.ranking) ? results.ranking : Object.values(results?.ranking || {});
   const p1 = ranking[0];
   const p2 = ranking[1];
   const p3 = ranking[2];
-  const boostedTeam = ranking.find(r => r.isFastestPerfect);
+  const boostedTeam = ranking.find ? ranking.find(r => r?.isFastestPerfect) : null;
 
   useEffect(() => {
     // Lanzar confeti estilo podio F1

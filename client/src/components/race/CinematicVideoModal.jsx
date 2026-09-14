@@ -108,19 +108,27 @@ export default function CinematicVideoModal({
       const lightInterval = setInterval(() => {
         count++;
         setLightsCount(count);
-        sounds.playCountdownTick();
+        try { sounds?.playCountdownTick?.(); } catch (e) {}
         if (count >= 5) {
           clearInterval(lightInterval);
           setTimeout(() => {
             setLightsCount(0);
-            sounds.playRaceStart();
+            try { sounds?.playRaceStart?.(); } catch (e) {}
           }, 1200);
         }
       }, 700);
 
       return () => clearInterval(lightInterval);
     } else {
-      sounds.playDopplerOvertake();
+      try {
+        if (sounds?.playDopplerOvertake) {
+          sounds.playDopplerOvertake();
+        } else if (sounds?.playOvertakeWhoosh) {
+          sounds.playOvertakeWhoosh();
+        }
+      } catch (e) {
+        console.warn('Audio play error in CinematicVideoModal:', e);
+      }
     }
   }, [isStart]);
 

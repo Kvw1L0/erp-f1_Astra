@@ -331,6 +331,11 @@ class SoundEngine {
     } catch (e) {}
   }
 
+  // 9b. Efecto Doppler de Sobrepaso en Video de Batalla
+  playDopplerOvertake() {
+    this.playOvertakeWhoosh();
+  }
+
   // 10. Confirmación de Pits
   playPitStopConfirm() {
     this.playAudioFile('pitstop.mp3', () => {

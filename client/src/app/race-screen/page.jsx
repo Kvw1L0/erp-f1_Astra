@@ -27,6 +27,17 @@ const TEAMS_LIST = [
   { id: 10, name: "Escudería 10 - Haas F1 Team", color: "#B6BABD", shortName: "EQ 10" }
 ];
 
+function normalizeResults(raw) {
+  if (!raw) return null;
+  const ranking = Array.isArray(raw.ranking) ? raw.ranking : Object.values(raw.ranking || {});
+  const teams = Array.isArray(raw.teams) ? raw.teams : Object.values(raw.teams || {});
+  return {
+    ...raw,
+    ranking,
+    teams
+  };
+}
+
 export default function RaceScreenPage() {
   const { socket, isConnected, gameState, cloudActions } = useSocket();
   const [isMuted, setIsMuted] = useState(false);
@@ -63,12 +74,11 @@ export default function RaceScreenPage() {
     };
   }, [gameState?.status, isMuted]);
 
-  // Manejar inicio de caso con Video 1 (Arranque / Semáforos)
+  // Auto-activación de Video 1 (Largada) en Caso 1
   useEffect(() => {
-    if (gameState?.status === 'ACTIVE_CASE' && gameState?.currentCase) {
-      const caseId = gameState.currentCase.id;
-      if (caseId !== prevCaseIdRef.current) {
-        prevCaseIdRef.current = caseId;
+    if (gameState?.status === 'ACTIVE' && gameState?.currentCase?.id === 1) {
+      if (prevCaseIdRef.current !== 1) {
+        prevCaseIdRef.current = 1;
         if (enableCinematic) {
           setCinematicType('START');
           setShowCinematic(true);
@@ -82,7 +92,7 @@ export default function RaceScreenPage() {
 
   useEffect(() => {
     if (gameState?.status === 'REVEALED' && gameState?.calculatedResults) {
-      const results = gameState.calculatedResults;
+      const results = normalizeResults(gameState.calculatedResults);
       const resultsKey = results.timestamp || results.roundTimestamp || (results.ranking && results.ranking[0] ? `${results.ranking[0].teamId}_${results.ranking[0].score}` : 'rev');
       
       if (lastProcessedResultsKeyRef.current !== resultsKey) {
@@ -91,9 +101,9 @@ export default function RaceScreenPage() {
         setIsNitroActive(false);
         setShowPodium(false);
 
-        if (results?.ranking) {
+        if (results?.ranking && Array.isArray(results.ranking)) {
           const overtakes = results.ranking
-            .filter(r => r.positionDelta > 0)
+            .filter(r => r && r.positionDelta > 0)
             .sort((a, b) => b.positionDelta - a.positionDelta)
             .map(r => ({
               teamId: r.teamId,
@@ -128,14 +138,15 @@ export default function RaceScreenPage() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('results_revealed', (results) => {
+    socket.on('results_revealed', (rawResults) => {
+      const results = normalizeResults(rawResults);
       setResultsData(results);
       setIsNitroActive(false);
       setShowPodium(false);
 
-      if (results?.ranking) {
+      if (results?.ranking && Array.isArray(results.ranking)) {
         const overtakes = results.ranking
-          .filter(r => r.positionDelta > 0)
+          .filter(r => r && r.positionDelta > 0)
           .sort((a, b) => b.positionDelta - a.positionDelta)
           .map(r => ({
             teamId: r.teamId,
@@ -194,7 +205,8 @@ export default function RaceScreenPage() {
         sounds.playNitroBoost();
       }
 
-      const hasDRS = results?.teams?.some(t => t.isDRSActive);
+      const teamsList = Array.isArray(results?.teams) ? results.teams : Object.values(results?.teams || {});
+      const hasDRS = teamsList.some(t => t?.isDRSActive);
       if (hasDRS) {
         setTimeout(() => sounds.playDRSActive(), 600);
       }
@@ -514,7 +526,8 @@ export default function RaceScreenPage() {
       <main className="flex-1 my-3 flex flex-col justify-center bg-f1-card/60 rounded-2xl border border-f1-border p-2 md:p-3 overflow-hidden shadow-2xl relative">
         {TEAMS_LIST.map((team, index) => {
           const laneNum = index + 1;
-          const result = resultsData?.teams?.find(t => t.teamId === laneNum);
+          const teamsList = Array.isArray(resultsData?.teams) ? resultsData.teams : Object.values(resultsData?.teams || {});
+          const result = teamsList.find(t => t?.teamId === laneNum);
           const telemetry = teamTelemetry[laneNum] || {
             currentPosition: laneNum,
             currentDistance: 0,
