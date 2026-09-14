@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Flag, Shield, KeyRound, AlertCircle, Users, Sparkles, Check, ChevronRight } from 'lucide-react';
+import { Flag, Shield, KeyRound, AlertCircle, Users, Sparkles, Check, ChevronRight, Plus, Trash2, User, Loader2 } from 'lucide-react';
 import { sounds, triggerHaptic } from '../../lib/soundEffects';
 
 export const OFFICIAL_TEAMS = [
@@ -20,7 +20,11 @@ export const OFFICIAL_TEAMS = [
 export default function PinLogin({ onLoginSuccess, isConnecting }) {
   const [selectedTeam, setSelectedTeam] = useState(OFFICIAL_TEAMS[0]);
   const [subname, setSubname] = useState('');
-  const [participantsText, setParticipantsText] = useState('');
+  const [drivers, setDrivers] = useState([
+    { id: 1, name: '', role: 'Piloto 1' },
+    { id: 2, name: '', role: 'Piloto 2' },
+    { id: 3, name: '', role: 'Piloto 3' }
+  ]);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -29,6 +33,35 @@ export default function PinLogin({ onLoginSuccess, isConnecting }) {
     setError('');
     sounds.playSelect();
     triggerHaptic([30]);
+  };
+
+  const handleAddDriver = () => {
+    if (drivers.length >= 10) return;
+    const nextIdx = drivers.length + 1;
+    setDrivers(prev => [
+      ...prev,
+      { id: nextIdx, name: '', role: `Piloto ${nextIdx}` }
+    ]);
+    sounds.playSelect();
+    triggerHaptic([20]);
+  };
+
+  const handleRemoveDriver = (idxToRemove) => {
+    if (drivers.length <= 1) return;
+    setDrivers(prev =>
+      prev
+        .filter((_, idx) => idx !== idxToRemove)
+        .map((d, i) => ({ ...d, id: i + 1, role: `Piloto ${i + 1}` }))
+    );
+    triggerHaptic([20]);
+  };
+
+  const handleDriverChange = (index, value) => {
+    setDrivers(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], name: value };
+      return copy;
+    });
   };
 
   const handleConfirmLogin = async (e) => {
@@ -40,9 +73,8 @@ export default function PinLogin({ onLoginSuccess, isConnecting }) {
     }
 
     const finalSubname = subname.trim() || selectedTeam.placeholder;
-    const participantsList = participantsText
-      .split(/[,;\n]+/)
-      .map(p => p.trim())
+    const participantsList = drivers
+      .map(d => d.name.trim())
       .filter(Boolean);
 
     setIsLoading(true);
@@ -60,10 +92,10 @@ export default function PinLogin({ onLoginSuccess, isConnecting }) {
         participants: participantsList.length > 0 ? participantsList : [`Piloto ${selectedTeam.id}`]
       };
 
-      onLoginSuccess(teamPayload, selectedTeam.pin, finalSubname, teamPayload.participants);
+      await onLoginSuccess(teamPayload, selectedTeam.pin, finalSubname, teamPayload.participants);
     } catch (err) {
-      setError('Error al conectar la terminal de Pits.');
-    } finally {
+      console.error('Error en login de participante:', err);
+      setError('Error al conectar la terminal de Pits. Intenta de nuevo.');
       setIsLoading(false);
     }
   };
@@ -79,7 +111,7 @@ export default function PinLogin({ onLoginSuccess, isConnecting }) {
           Terminal <span className="text-f1-red">de Pits</span>
         </h2>
         <p className="text-xs text-slate-400 mt-1 font-mono">
-          SELECCIÓN DE ESCUDERÍA, SUBNOMBRE & NÓMINA DE PILOTOS
+          SELECCIÓN DE ESCUDERÍA, SUBNOMBRE & NÓMINA INDIVIDUAL DE PILOTOS
         </p>
       </div>
 
@@ -144,25 +176,77 @@ export default function PinLogin({ onLoginSuccess, isConnecting }) {
             className="w-full bg-f1-dark border border-f1-border focus:border-f1-yellow rounded-xl px-4 py-3 text-white text-sm font-sans placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-f1-yellow transition-all"
           />
           <p className="text-[10px] text-slate-500 font-mono mt-1">
-            Personaliza el nombre de tu escudería en la pista gigante y el podio.
+            Personaliza el nombre de tu escudería en la pantalla gigante y el podio.
           </p>
         </div>
 
-        {/* 3. Nómina de Participantes */}
+        {/* 3. Nómina Fila por Fila de Pilotos / Sujetos */}
         <div>
-          <label className="block text-xs font-mono text-slate-300 uppercase mb-1.5 flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-f1-green" />
-            <span>3. Pilotos de la Escudería (Nómina de Integrantes):</span>
-          </label>
-          <textarea
-            rows={2}
-            value={participantsText}
-            onChange={(e) => setParticipantsText(e.target.value)}
-            placeholder="Escribe los nombres separados por coma (ej. Camila, Roberto, Martín, Sofía)"
-            className="w-full bg-f1-dark border border-f1-border focus:border-f1-green rounded-xl px-4 py-2.5 text-white text-sm font-sans placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-f1-green transition-all resize-none"
-          />
-          <p className="text-[10px] text-slate-500 font-mono mt-1">
-            Se utilizará para dinámicas de ruleta, traspaso de pilotos y desafíos del moderador.
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-mono text-slate-300 uppercase flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-f1-green" />
+              <span>3. Pilotos de la Escudería (Nómina por Fila):</span>
+            </label>
+            <span className="text-[10px] font-mono text-slate-400">
+              {drivers.length} / 10 Pilotos
+            </span>
+          </div>
+
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {drivers.map((driver, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-2 bg-f1-dark/90 p-2 rounded-xl border border-f1-border/70 hover:border-slate-600 transition-all"
+              >
+                {/* Badge de Número de Fila / ID */}
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center font-mono font-black text-xs text-white flex-shrink-0 shadow-sm"
+                  style={{ backgroundColor: selectedTeam.color || '#E10600' }}
+                >
+                  {String(idx + 1).padStart(2, '0')}
+                </div>
+
+                {/* Input de Nombre individual */}
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    maxLength={35}
+                    value={driver.name}
+                    onChange={(e) => handleDriverChange(idx, e.target.value)}
+                    placeholder={`Nombre y Apellido del Piloto ${idx + 1}`}
+                    className="w-full bg-black/40 border border-transparent focus:border-f1-green rounded-lg px-3 py-2 text-white text-xs font-sans placeholder-slate-600 focus:outline-none transition-all"
+                  />
+                </div>
+
+                {/* Botón Eliminar Fila */}
+                {drivers.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveDriver(idx)}
+                    className="w-8 h-8 rounded-lg bg-red-950/30 hover:bg-red-900/60 text-red-400 border border-red-500/20 flex items-center justify-center transition-all flex-shrink-0 active:scale-95"
+                    title="Eliminar este piloto"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Botón Agregar Fila */}
+          {drivers.length < 10 && (
+            <button
+              type="button"
+              onClick={handleAddDriver}
+              className="mt-2 w-full py-2 px-3 rounded-xl border border-dashed border-f1-border hover:border-f1-green/60 bg-f1-dark/40 hover:bg-f1-dark text-slate-300 hover:text-f1-green font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-98"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Agregar Otro Piloto a la Escudería</span>
+            </button>
+          )}
+
+          <p className="text-[10px] text-slate-500 font-mono mt-1.5">
+            Cada fila identifica a un integrante para la ruleta en vivo y dinámicas de escenario.
           </p>
         </div>
 
@@ -170,10 +254,13 @@ export default function PinLogin({ onLoginSuccess, isConnecting }) {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full mt-2 bg-gradient-to-r from-f1-red via-red-600 to-rose-700 hover:from-red-600 hover:to-rose-800 disabled:opacity-40 text-white font-mono font-black py-3.5 px-6 rounded-xl transition-all shadow-xl shadow-f1-red/30 active:scale-[0.98] uppercase tracking-wider text-sm flex items-center justify-center gap-2"
+          className="w-full mt-3 bg-gradient-to-r from-f1-red via-red-600 to-rose-700 hover:from-red-600 hover:to-rose-800 disabled:opacity-40 text-white font-mono font-black py-3.5 px-6 rounded-xl transition-all shadow-xl shadow-f1-red/30 active:scale-[0.98] uppercase tracking-wider text-sm flex items-center justify-center gap-2 cursor-pointer"
         >
           {isLoading ? (
-            <span className="animate-pulse">SINCRONIZANDO TELEMETRÍA...</span>
+            <span className="animate-pulse flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
+              CONECTANDO A PITS...
+            </span>
           ) : (
             <>
               <span>INGRESAR A PITS & BLOQUEAR ESCUDERÍA</span>

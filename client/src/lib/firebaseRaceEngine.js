@@ -74,6 +74,18 @@ class FirebaseRaceEngine {
     });
   }
 
+  // 2d. Escuchar envíos de respuestas en vivo de los participantes
+  onSubmissionsChange(callback) {
+    this.init();
+    if (!this.db) return () => {};
+
+    const subRef = ref(this.db, 'f1_race/submissions');
+    return onValue(subRef, (snapshot) => {
+      const val = snapshot.val();
+      callback(val || {});
+    });
+  }
+
   // 3. Iniciar un caso / Sector
   async startCase(caseData, sectorIndex = 1, totalSectors = 10) {
     this.init();

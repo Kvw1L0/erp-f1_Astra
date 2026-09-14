@@ -111,6 +111,15 @@ export default function ParticipantPage() {
     };
   }, [socket]);
 
+  // Sincronización de inicio de nueva ronda: resetear envíos y habilitar preguntas inmediatamente
+  useEffect(() => {
+    if (gameState?.status === 'ACTIVE_CASE') {
+      setHasSubmitted(false);
+      setIsSubmitting(false);
+      setSubmissionTimeFormatted(null);
+    }
+  }, [gameState?.status, gameState?.startTime, gameState?.currentSectorIndex]);
+
   // 6. Login exitoso con subnombre y nómina
   const handleLoginSuccess = async (teamData, pin, subname, participants) => {
     const fullTeam = {
@@ -122,27 +131,56 @@ export default function ParticipantPage() {
     setTeam(fullTeam);
     sessionStorage.setItem('f1_participant_team', JSON.stringify(fullTeam));
 
+    // Si la ronda ya está en curso, habilitar preguntas
+    if (gameState?.status === 'ACTIVE_CASE') {
+      setHasSubmitted(false);
+      setIsSubmitting(false);
+    }
+
     if (socket) {
       socket.emit('join_participant', { teamId: fullTeam.id, pin });
     }
 
     // Sincronizar en Firebase o Cloud State
-    await cloudActions.updateTeamProfile(fullTeam.id, fullTeam.subname, fullTeam.participants);
+    try {
+      await cloudActions.updateTeamProfile(fullTeam.id, fullTeam.subname, fullTeam.participants);
+    } catch (e) {
+      console.warn('Sincronización de perfil cloud:', e);
+    }
   };
 
-  const handleSubmitAnswers = (answers) => {
-    if (!socket || !team) return;
+  const handleSubmitAnswers = async (answers) => {
+    if (!team) return;
 
     setIsSubmitting(true);
-    socket.emit('participant_submit', { teamId: team.id, answers }, (response) => {
-      setIsSubmitting(false);
-      if (response && response.success) {
+    try {
+      const res = await cloudActions.submitAnswers(
+        team.id,
+        answers,
+        gameState?.startTime,
+        gameState?.currentCase
+      );
+      if (res?.success) {
         setHasSubmitted(true);
-        if (response.durationFormatted) {
-          setSubmissionTimeFormatted(response.durationFormatted);
+        if (res.durationSeconds) {
+          setSubmissionTimeFormatted(`${res.durationSeconds}s`);
+        } else if (res.durationFormatted) {
+          setSubmissionTimeFormatted(res.durationFormatted);
         }
+        sounds.playSuccess();
+        triggerHaptic([100, 50, 100]);
       }
-    });
+    } catch (err) {
+      console.error('Error al enviar respuestas:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleLeaveTeam = () => {
+    sessionStorage.removeItem('f1_participant_team');
+    setTeam(null);
+    setHasSubmitted(false);
   };
 
   const handleSuperBoostSuccess = async (timeMs) => {
@@ -326,24 +364,67 @@ export default function ParticipantPage() {
             isSubmitting={isSubmitting}
           />
         ) : (
-          <div className="max-w-md mx-auto w-full bg-f1-card p-8 rounded-3xl border border-f1-border text-center shadow-xl">
-            <div className="w-16 h-16 bg-f1-dark border border-f1-border rounded-2xl flex items-center justify-center mx-auto mb-6 text-f1-cyan animate-pulse">
+          <div className="max-w-md mx-auto w-full bg-f1-card p-8 rounded-3xl border border-f1-border text-center shadow-2xl">
+            <div className="w-16 h-16 bg-f1-dark border border-f1-cyan/40 rounded-2xl flex items-center justify-center mx-auto mb-5 text-f1-cyan shadow-lg shadow-f1-cyan/10 animate-pulse">
               <Clock className="w-8 h-8" />
             </div>
+            
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-f1-yellow/10 border border-f1-yellow/30 text-xs font-mono text-f1-yellow font-bold mb-3">
               <Compass className="w-3.5 h-3.5" />
               <span>PREPARANDO SECTOR {sectorIndex} / {totalSectors}</span>
             </div>
+
             <h2 className="text-xl font-bold text-white mb-2">
-              Esperando Inicio de Sector
+              Terminal en Boxes Lista
             </h2>
-            <p className="text-sm text-slate-400 leading-relaxed font-sans mb-6">
-              Tu monoplaza está listo en Pits. En cuanto Dirección de Carrera inicie la ronda, se transmitirá la cinemática y se habilitará tu formulario de resolución.
+            
+            <p className="text-xs text-slate-400 leading-relaxed font-sans mb-5">
+              Tu monoplaza está listo en Pits. En cuanto Dirección de Carrera presione <strong className="text-f1-green">Iniciar Ronda</strong>, esta pantalla se activará automáticamente con el caso práctico para responder.
             </p>
-            <div className="p-3 bg-f1-dark/80 rounded-xl border border-f1-border text-xs font-mono text-slate-300 flex items-center justify-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-f1-cyan animate-ping" />
-              <span>TERMINAL SINCRONIZADA • PITS LISTOS</span>
+
+            {/* Resumen del Equipo */}
+            <div className="p-3.5 bg-f1-dark/90 rounded-2xl border border-f1-border text-left mb-5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-slate-400 uppercase">ESCUDERÍA OFICIAL:</span>
+                <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: team.color || '#E10600' }} />
+                  {team.name}
+                </span>
+              </div>
+              {team.subname && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">SUBNOMBRE:</span>
+                  <span className="text-xs font-mono font-bold text-f1-yellow">
+                    &ldquo;{team.subname}&rdquo;
+                  </span>
+                </div>
+              )}
+              {team.participants && team.participants.length > 0 && (
+                <div className="pt-1 border-t border-f1-border/40">
+                  <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">PILOTOS EN BOXES:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {team.participants.map((p, i) => (
+                      <span key={i} className="px-2 py-0.5 rounded bg-white/5 border border-f1-border text-[10px] font-mono text-slate-300">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
+
+            <div className="p-2.5 bg-cyan-950/30 rounded-xl border border-cyan-500/30 text-xs font-mono text-cyan-300 flex items-center justify-center gap-2 mb-4">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              <span>TERMINAL SINCRONIZADA • ESPERANDO SEÑAL VERDE</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLeaveTeam}
+              className="text-[11px] font-mono text-slate-500 hover:text-red-400 transition-colors underline cursor-pointer"
+            >
+              ← Cambiar de Escudería o editar integrantes
+            </button>
           </div>
         )}
       </main>

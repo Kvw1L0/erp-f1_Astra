@@ -989,20 +989,30 @@ export default function AdminPage() {
                   1. OPERACIÓN DE RONDA (FLUJO PRINCIPAL):
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {/* 1. Iniciar Caso con Video 1 */}
+                  {/* 1. Iniciar Caso con Video 1 (o Reiniciar si está activa) */}
                   <button
                     type="button"
                     onClick={handleStartCase}
-                    disabled={isLoading || currentStatus === 'ACTIVE_CASE'}
-                    className={`p-4 rounded-xl font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all shadow-lg ${
+                    disabled={isLoading}
+                    className={`p-4 rounded-xl font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all shadow-lg active:scale-95 cursor-pointer ${
                       currentStatus === 'ACTIVE_CASE'
-                        ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-f1-green to-emerald-600 hover:from-emerald-500 text-black shadow-f1-green/20 active:scale-95'
+                        ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 text-black shadow-amber-500/20 border border-yellow-300/40'
+                        : 'bg-gradient-to-r from-f1-green to-emerald-600 hover:from-emerald-500 text-black shadow-f1-green/20'
                     }`}
                   >
-                    <Play className="w-5 h-5 fill-current" />
-                    <span>1. INICIAR RONDA</span>
-                    <span className="text-[9px] opacity-85 font-normal">Video 1 Arranque & Habilita tablets</span>
+                    {currentStatus === 'ACTIVE_CASE' ? (
+                      <>
+                        <RotateCcw className="w-5 h-5 text-black" />
+                        <span>1. REINICIAR / FORZAR RONDA</span>
+                        <span className="text-[9px] opacity-90 font-normal">Reinicia 60s y reactiva tablets</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-5 h-5 fill-current" />
+                        <span>1. INICIAR RONDA</span>
+                        <span className="text-[9px] opacity-85 font-normal">Video 1 Arranque & Habilita tablets</span>
+                      </>
+                    )}
                   </button>
 
                   {/* 2. Finalizar Automáticamente con Video 2 */}
@@ -1233,8 +1243,8 @@ export default function AdminPage() {
 
             {/* Monitor de Telemetría con Nómina de Integrantes */}
             <LiveTelemetry
-              connectedTeams={adminState?.connectedTeams || {}}
-              submissions={adminState?.submissions || {}}
+              connectedTeams={gameState?.teamsProfiles || adminState?.connectedTeams || {}}
+              submissions={gameState?.submissions || adminState?.submissions || {}}
               teamsList={OFFICIAL_TEAMS.map(t => ({
                 id: t.id,
                 name: t.name,

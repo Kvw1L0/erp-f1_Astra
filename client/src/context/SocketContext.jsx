@@ -77,11 +77,21 @@ export function SocketProvider({ children }) {
         }));
       });
 
+      // Escuchar envíos de respuestas en vivo
+      const unsubSubmissions = firebaseRaceEngine.onSubmissionsChange((submissions) => {
+        setGameState(prev => ({
+          ...prev,
+          submissions: submissions || {},
+          submissionsCount: Object.keys(submissions || {}).length
+        }));
+      });
+
       return () => {
         if (unsubState) unsubState();
         if (unsubTelemetry) unsubTelemetry();
         if (unsubTeams) unsubTeams();
         if (unsubSummon) unsubSummon();
+        if (unsubSubmissions) unsubSubmissions();
       };
     }
 

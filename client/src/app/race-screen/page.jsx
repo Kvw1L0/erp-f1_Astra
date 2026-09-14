@@ -77,7 +77,54 @@ export default function RaceScreenPage() {
     }
   }, [gameState?.status, gameState?.currentCase, enableCinematic]);
 
-  // Manejar revelación de resultados con secuencia: Video 2 (Carrera) -> 2s Pausa -> Movimiento Monoplazas
+  // Manejar revelación de resultados con secuencia: Video 2 (Carrera) -> 2s Pausa -> Movimiento Monoplazas (Firebase Cloud)
+  const lastProcessedResultsKeyRef = useRef(null);
+
+  useEffect(() => {
+    if (gameState?.status === 'REVEALED' && gameState?.calculatedResults) {
+      const results = gameState.calculatedResults;
+      const resultsKey = results.timestamp || results.roundTimestamp || (results.ranking && results.ranking[0] ? `${results.ranking[0].teamId}_${results.ranking[0].score}` : 'rev');
+      
+      if (lastProcessedResultsKeyRef.current !== resultsKey) {
+        lastProcessedResultsKeyRef.current = resultsKey;
+        setResultsData(results);
+        setIsNitroActive(false);
+        setShowPodium(false);
+
+        if (results?.ranking) {
+          const overtakes = results.ranking
+            .filter(r => r.positionDelta > 0)
+            .sort((a, b) => b.positionDelta - a.positionDelta)
+            .map(r => ({
+              teamId: r.teamId,
+              teamName: r.shortName || r.teamName,
+              color: r.color,
+              newPos: r.currentPosition,
+              delta: r.positionDelta
+            }));
+          setRecentOvertakes(overtakes);
+        }
+
+        if (enableCinematic) {
+          setCinematicType('RACE_BATTLE');
+          setShowCinematic(true);
+        } else {
+          triggerSuspenseAndTrackAnimation(results);
+        }
+      }
+    } else if (gameState?.status === 'LOBBY' || gameState?.status === 'HARD_RESET') {
+      lastProcessedResultsKeyRef.current = null;
+      setResultsData(null);
+      setIsNitroActive(false);
+      setShowCinematic(false);
+      setShowPodium(false);
+      setShowSolution(false);
+      setShowDebrief(false);
+      setRecentOvertakes([]);
+    }
+  }, [gameState?.status, gameState?.calculatedResults, enableCinematic]);
+
+  // Fallback para WebSocket local Socket.io
   useEffect(() => {
     if (!socket) return;
 
@@ -86,7 +133,6 @@ export default function RaceScreenPage() {
       setIsNitroActive(false);
       setShowPodium(false);
 
-      // Calcular adelantamientos para el banner F1
       if (results?.ranking) {
         const overtakes = results.ranking
           .filter(r => r.positionDelta > 0)
