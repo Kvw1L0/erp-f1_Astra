@@ -524,6 +524,20 @@ class FirebaseRaceEngine {
     }, 1500);
   }
 
+  // 11b. Actualizar perfil de equipo (subnombre y participantes/pilotos)
+  async updateTeamProfile(teamId, subname, participants) {
+    this.init();
+    if (!this.db) return;
+
+    const numId = Number(teamId);
+    await set(ref(this.db, `f1_race/teams/${numId}`), {
+      teamId: numId,
+      subname: String(subname || '').trim(),
+      participants: Array.isArray(participants) ? participants : [],
+      updatedAt: Date.now()
+    });
+  }
+
   // 12. Convocatoria a Escenario (Disparador de Eventos)
   async triggerStageSummon(teamId, reason = 'Dinámica en Escenario', active = true) {
     this.init();

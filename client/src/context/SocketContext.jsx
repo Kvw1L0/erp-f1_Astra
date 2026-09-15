@@ -13,7 +13,7 @@ export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [hasSynced, setHasSynced] = useState(false);
-  const [isCloudFirebase, setIsCloudFirebase] = useState(false);
+  const [isCloudFirebase, setIsCloudFirebase] = useState(isFirebaseConfigured());
   const [gameState, setGameState] = useState({
     status: 'LOBBY',
     currentSectorIndex: 1,
@@ -164,7 +164,7 @@ export function SocketProvider({ children }) {
   // Métodos unificados para clientes y admin (compatibles con Firebase y Socket.io)
   const cloudActions = {
     startCase: async (caseData, sectorIndex, totalSectors) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.startCase(caseData, sectorIndex, totalSectors);
         return { success: true };
       }
@@ -174,7 +174,7 @@ export function SocketProvider({ children }) {
     },
 
     submitAnswers: async (teamId, answers, startTime, currentCase) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         const sub = await firebaseRaceEngine.submitAnswers(teamId, answers, startTime, currentCase);
         return { success: true, ...sub };
       }
@@ -184,7 +184,7 @@ export function SocketProvider({ children }) {
     },
 
     autoFinishCase: async (currentCase, sectorIndex, totalSectors) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         const results = await firebaseRaceEngine.autoFinish(currentCase, sectorIndex, totalSectors);
         return { success: true, results };
       }
@@ -194,7 +194,7 @@ export function SocketProvider({ children }) {
     },
 
     nextSector: async (nextSectorIdx, totalSectors) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.nextSector(nextSectorIdx, totalSectors);
         return { success: true };
       }
@@ -204,7 +204,7 @@ export function SocketProvider({ children }) {
     },
 
     resetChampionship: async () => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.resetChampionship();
         return { success: true };
       }
@@ -214,7 +214,7 @@ export function SocketProvider({ children }) {
     },
 
     toggleSafetyCar: async (active) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.toggleSafetyCar(active);
         return { success: true };
       }
@@ -224,7 +224,7 @@ export function SocketProvider({ children }) {
     },
 
     simulate10Teams: async (currentCase, sectorIndex, totalSectors) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         const results = await firebaseRaceEngine.simulate10Teams(currentCase, sectorIndex, totalSectors);
         return { success: true, results };
       }
@@ -239,7 +239,7 @@ export function SocketProvider({ children }) {
     },
 
     updateTeamProfile: async (teamId, subname, participants) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.updateTeamProfile(teamId, subname, participants);
         return { success: true };
       }
@@ -255,7 +255,7 @@ export function SocketProvider({ children }) {
     },
 
     hardReset: async () => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.hardReset();
         return { success: true };
       }
@@ -278,7 +278,7 @@ export function SocketProvider({ children }) {
     },
 
     triggerStageSummon: async (teamId, reason, active = true) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.triggerStageSummon(teamId, reason, active);
         return { success: true };
       }
@@ -289,7 +289,7 @@ export function SocketProvider({ children }) {
     },
 
     extendTimer: async (extraSeconds = 30) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.extendTimer(extraSeconds);
         return { success: true };
       }
@@ -302,7 +302,7 @@ export function SocketProvider({ children }) {
     },
 
     setRedFlag: async (active) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.setRedFlag(active);
         return { success: true };
       }
@@ -312,7 +312,7 @@ export function SocketProvider({ children }) {
     },
 
     setWetRace: async (active) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.setWetRace(active);
         return { success: true };
       }
@@ -322,7 +322,7 @@ export function SocketProvider({ children }) {
     },
 
     sendPitRadioMessage: async (message) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.sendPitRadioMessage(message);
         return { success: true };
       }
@@ -333,7 +333,7 @@ export function SocketProvider({ children }) {
     },
 
     activateSuperBoost: async (teamId, success = true) => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         await firebaseRaceEngine.activateSuperBoost(teamId, success);
         return { success: true };
       }
@@ -352,7 +352,7 @@ export function SocketProvider({ children }) {
     },
 
     getChampionshipHistory: async () => {
-      if (isCloudFirebase) {
+      if (isFirebaseConfigured()) {
         return await firebaseRaceEngine.getChampionshipHistory();
       }
       return {};
