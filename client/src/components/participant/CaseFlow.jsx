@@ -13,7 +13,9 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, t
     '🟢 Sesión de Pits iniciada. Todos los monoplazas en garaje.'
   ]);
 
-  const steps = currentCase?.steps || [];
+  const steps = Array.isArray(currentCase?.steps)
+    ? currentCase.steps
+    : Object.values(currentCase?.steps || {});
   const totalSteps = steps.length;
   const answeredCount = Object.keys(selectedAnswers).length;
   const isComplete = totalSteps > 0 && answeredCount === totalSteps;
@@ -251,7 +253,7 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, t
 
                   {/* 3 Opciones de Acción */}
                   <div className="space-y-2.5">
-                    {step.options?.map((option, optIdx) => {
+                    {(Array.isArray(step.options) ? step.options : Object.values(step.options || {})).map((option, optIdx) => {
                       const isSelected = selectedOptionId === option.id;
                       const optLetters = ['A', 'B', 'C'];
                       const letter = optLetters[optIdx] || `${optIdx + 1}`;

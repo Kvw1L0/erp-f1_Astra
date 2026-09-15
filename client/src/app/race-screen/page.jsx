@@ -52,6 +52,7 @@ export default function RaceScreenPage() {
   const [enableCinematic, setEnableCinematic] = useState(true);
   const [recentOvertakes, setRecentOvertakes] = useState([]);
   const [isSuspenseWait, setIsSuspenseWait] = useState(false);
+  const [isCarsAdvancing, setIsCarsAdvancing] = useState(false);
 
   const prevCaseIdRef = useRef(null);
 
@@ -93,11 +94,12 @@ export default function RaceScreenPage() {
   useEffect(() => {
     if (gameState?.status === 'REVEALED' && gameState?.calculatedResults) {
       const results = normalizeResults(gameState.calculatedResults);
-      const resultsKey = results.timestamp || results.roundTimestamp || (results.ranking && results.ranking[0] ? `${results.ranking[0].teamId}_${results.ranking[0].score}` : 'rev');
+      const resultsKey = results.calculatedAt || results.timestamp || results.roundTimestamp || (results.ranking && results.ranking[0] ? `${results.ranking[0].teamId}_${results.ranking[0].score}` : 'rev');
       
       if (lastProcessedResultsKeyRef.current !== resultsKey) {
         lastProcessedResultsKeyRef.current = resultsKey;
         setResultsData(results);
+        setIsCarsAdvancing(false);
         setIsNitroActive(false);
         setShowPodium(false);
 
@@ -125,6 +127,7 @@ export default function RaceScreenPage() {
     } else if (gameState?.status === 'LOBBY' || gameState?.status === 'HARD_RESET') {
       lastProcessedResultsKeyRef.current = null;
       setResultsData(null);
+      setIsCarsAdvancing(false);
       setIsNitroActive(false);
       setShowCinematic(false);
       setShowPodium(false);
@@ -141,6 +144,7 @@ export default function RaceScreenPage() {
     socket.on('results_revealed', (rawResults) => {
       const results = normalizeResults(rawResults);
       setResultsData(results);
+      setIsCarsAdvancing(false);
       setIsNitroActive(false);
       setShowPodium(false);
 
@@ -168,6 +172,7 @@ export default function RaceScreenPage() {
 
     socket.on('lobby_reset', () => {
       setResultsData(null);
+      setIsCarsAdvancing(false);
       setIsNitroActive(false);
       setShowCinematic(false);
       setShowPodium(false);
@@ -185,11 +190,13 @@ export default function RaceScreenPage() {
   // Pausa dramática de 2 segundos antes de que los vehículos avancen
   const triggerSuspenseAndTrackAnimation = (results) => {
     setShowCinematic(false);
+    setIsCarsAdvancing(false);
     setIsSuspenseWait(true);
-    sounds.playCountdownTick();
+    try { sounds?.playCountdownTick?.(); } catch (e) {}
 
     setTimeout(() => {
       setIsSuspenseWait(false);
+      setIsCarsAdvancing(true);
       triggerTrackAnimation(results);
     }, 2000);
   };
@@ -545,6 +552,7 @@ export default function RaceScreenPage() {
               result={result}
               telemetry={telemetry}
               isRevealed={isRevealed}
+              isCarsAdvancing={isCarsAdvancing}
               isNitroActive={isNitroActive}
               isCloseBattle={isCloseBattle}
             />

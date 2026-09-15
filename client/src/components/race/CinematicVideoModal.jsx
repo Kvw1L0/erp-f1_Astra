@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FastForward, Volume2, VolumeX, Zap, Gauge, Radio, Sparkles } from 'lucide-react';
 import { sounds } from '../../lib/soundEffects';
 
@@ -14,36 +14,36 @@ export const DEFAULT_BATTLE_THEMES = {
     desc: "Telemetría lateral de cascos: sobrepaso milimétrico en la frenada sin bloqueo de neumáticos."
   },
   3: {
-    title: "Eau Rouge & Raidillon: Subida a Fondo a 315 km/h Sin Levantar",
-    desc: "Cámara de halo en compresión brutal: stock sincronizado permite aceleración máxima en la recta Kemmel."
+    title: "Batalla Bajo la Lluvia: Adherencia Máxima en Curva Peraltada",
+    desc: "Spray de agua y asfalto resbaladizo: la toma correcta de decisiones ERP otorga tracción total."
   },
   4: {
-    title: "Tren de DRS en Recta Principal: Doble Rebase a 355 km/h",
-    desc: "Alerón trasero abierto y succión aerodinámica brutal en plena recta de meta."
+    title: "Recta Principal con DRS Abierto a 355 km/h",
+    desc: "Apertura de alerón trasero y succión aerodinámica: adelantamiento imparable antes de la frenada."
   },
   5: {
-    title: "Horquilla de 180°: Frenada Tardía y Tijera Perfecta (Switchback)",
-    desc: "Frenada al límite en la horquilla: cruce de trazada y tracción inmediata en la salida."
+    title: "Horquilla de Mónaco: Tracción y Precisión Quirúrgica",
+    desc: "El giro más cerrado del campeonato: aceleración limpia en salida de curva lenta."
   },
   6: {
-    title: "Curva Peraltada Extrema: Adelantamiento por Arriba Rozando el Muro",
-    desc: "Giro con 70° de inclinación: chispas de titanio del fondo plano iluminando la pista."
+    title: "Eau Rouge / Raidillon: Subida a Fondo a Ciegas",
+    desc: "Fuerzas G extremas en compresión: las escuderías con procesos optimizados no levantan el pie."
   },
   7: {
-    title: "Batalla Bajo Lluvia Intensa: Spray de Agua y Adelantamiento a Ciegas",
-    desc: "Visibilidad cero por el spray de agua: adelantamiento milagroso guiado por telemetría pura."
+    title: "Doble Vértice de Suzuka: Fluidez Aerodinámica Suprema",
+    desc: "Cambios de dirección milimétricos enlazando curvas rápidas."
   },
   8: {
-    title: "Túnel a 300 km/h: Aullido del Motor V6 y Rebase en Penumbra",
-    desc: "Resplandor de frenos al rojo vivo en la penumbra del túnel con eco ensordecedor del motor."
+    title: "Entrada a Pits en Verde: Parada Relámpago en 1.9 Segundos",
+    desc: "Coordinación perfecta de mecánicos: cambio de 4 neumáticos sin titubeos."
   },
   9: {
-    title: "Chicanes Enlazadas: Cambios Bruscos de Dirección y Toque de Neumáticos",
-    desc: "Transferencia violenta de pesos de izquierda a derecha volando sobre los pianos de la chicane."
+    title: "Sector Nocturno de Marina Bay: Llantas Rozando el Muro",
+    desc: "Iluminación artificial y chispas al límite: precisión milimétrica sin margen de error."
   },
   10: {
-    title: "Última Vuelta: Foto-Finish Paralelo por Milésimas de Segundo",
-    desc: "Llegada rueda a rueda a la línea de meta: bandera a cuadros ondeando y trompos de victoria con chispas."
+    title: "Gran Final de Abu Dhabi: Coronación del Campeonato Mundial",
+    desc: "Llegada triunfal a la línea de meta: podio definitivo de campeones ERP."
   }
 };
 
@@ -65,6 +65,14 @@ export default function CinematicVideoModal({
   const [liveSpeed, setLiveSpeed] = useState(312);
   const [liveRpmRatio, setLiveRpmRatio] = useState(0.85);
   const videoRef = useRef(null);
+  const hasFinishedRef = useRef(false);
+
+  const safeFinish = useCallback(() => {
+    if (!hasFinishedRef.current) {
+      hasFinishedRef.current = true;
+      if (onFinish) onFinish();
+    }
+  }, [onFinish]);
 
   const sectorKey = Math.min(Math.max(Number(sectorIndex) || 1, 1), 10);
   const sectorTheme = DEFAULT_BATTLE_THEMES[sectorKey] || DEFAULT_BATTLE_THEMES[1];
@@ -149,7 +157,7 @@ export default function CinematicVideoModal({
       setSecondsLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          if (onFinish) onFinish();
+          safeFinish();
           return 0;
         }
         return prev - 1;
@@ -157,7 +165,7 @@ export default function CinematicVideoModal({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [onFinish]);
+  }, [safeFinish]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center select-none overflow-hidden animate-fade-in">
@@ -172,7 +180,7 @@ export default function CinematicVideoModal({
             playsInline
             muted={isMuted}
             onError={handleVideoError}
-            onEnded={onFinish}
+            onEnded={safeFinish}
             className="w-full h-full object-cover opacity-90"
           >
             <source src={currentVideoSrc} type="video/mp4" />
@@ -274,7 +282,7 @@ export default function CinematicVideoModal({
             </button>
 
             <button
-              onClick={onFinish}
+              onClick={safeFinish}
               className="px-5 py-2.5 rounded-xl bg-white/95 hover:bg-white text-black font-mono font-black text-xs uppercase flex items-center gap-2 shadow-2xl hover:scale-105 active:scale-95 transition-all"
             >
               <span>SALTAR VIDEO ({secondsLeft}s)</span>

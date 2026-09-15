@@ -730,6 +730,10 @@ export default function AdminPage() {
 
   const selectedCase = cases.find(c => c.id === selectedCaseId) || cases[0];
   const teamsProfiles = gameState?.teamsProfiles || {};
+  const totalEnrolledParticipants = Object.values(teamsProfiles).reduce((acc, t) => {
+    return acc + (Array.isArray(t?.participants) ? t.participants.length : 0);
+  }, 0);
+  const enrolledTeamsCount = Object.values(teamsProfiles).filter(t => (t?.participants?.length || 0) > 0).length;
 
   const handleStartCase = async () => {
     setIsLoading(true);
@@ -875,6 +879,10 @@ export default function AdminPage() {
                     <Flame className="w-3 h-3 text-amber-400" /> FIREBASE CLOUD
                   </span>
                 )}
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono font-bold flex items-center gap-1">
+                  <Users className="w-3 h-3 text-emerald-400" />
+                  <span>{totalEnrolledParticipants} PILOTOS ({enrolledTeamsCount}/10 ESCUDERÍAS)</span>
+                </span>
                 {isRedFlagActive && (
                   <span className="px-2.5 py-0.5 rounded-full bg-red-600 text-white font-mono text-[10px] font-black uppercase flex items-center gap-1 animate-pulse">
                     🚨 BANDERA ROJA ACTIVA

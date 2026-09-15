@@ -8,12 +8,15 @@ export default function CountdownBar({ startTime, durationSeconds = 60, onTimeEx
   const totalMs = durationSeconds * 1000;
   const lastVibratedSecond = useRef(-1);
 
+  const hasExpiredRef = useRef(false);
+
   useEffect(() => {
     if (!startTime) return;
+    hasExpiredRef.current = false;
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const elapsed = now - startTime;
+      const elapsed = Math.max(0, now - startTime);
       const remaining = Math.max(0, totalMs - elapsed);
 
       setTimeLeftMs(remaining);
@@ -29,9 +32,12 @@ export default function CountdownBar({ startTime, durationSeconds = 60, onTimeEx
 
       if (remaining <= 0) {
         clearInterval(interval);
-        if (onTimeExpired) onTimeExpired();
+        if (!hasExpiredRef.current) {
+          hasExpiredRef.current = true;
+          if (onTimeExpired) onTimeExpired();
+        }
       }
-    }, 50);
+    }, 100);
 
     return () => clearInterval(interval);
   }, [startTime, durationSeconds, totalMs, onTimeExpired]);

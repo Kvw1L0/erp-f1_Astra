@@ -113,12 +113,19 @@ export default function ParticipantPage() {
 
   // Sincronización de inicio de nueva ronda: resetear envíos y habilitar preguntas inmediatamente
   useEffect(() => {
-    if (gameState?.status === 'ACTIVE_CASE') {
+    if (gameState?.status === 'ACTIVE_CASE' || gameState?.status === 'ACTIVE') {
+      const alreadySubmitted = !!(team?.id && gameState?.submissions?.[team.id]);
+      setHasSubmitted(alreadySubmitted);
+      setIsSubmitting(false);
+      if (!alreadySubmitted) {
+        setSubmissionTimeFormatted(null);
+      }
+    } else if (gameState?.status === 'LOBBY') {
       setHasSubmitted(false);
       setIsSubmitting(false);
       setSubmissionTimeFormatted(null);
     }
-  }, [gameState?.status, gameState?.startTime, gameState?.currentSectorIndex]);
+  }, [gameState?.status, gameState?.startTime, gameState?.currentSectorIndex, gameState?.submissions, team?.id]);
 
   // 6. Login exitoso con subnombre y nómina
   const handleLoginSuccess = async (teamData, pin, subname, participants) => {
@@ -132,8 +139,9 @@ export default function ParticipantPage() {
     sessionStorage.setItem('f1_participant_team', JSON.stringify(fullTeam));
 
     // Si la ronda ya está en curso, habilitar preguntas
-    if (gameState?.status === 'ACTIVE_CASE') {
-      setHasSubmitted(false);
+    if (gameState?.status === 'ACTIVE_CASE' || gameState?.status === 'ACTIVE') {
+      const alreadySubmitted = !!(fullTeam.id && gameState?.submissions?.[fullTeam.id]);
+      setHasSubmitted(alreadySubmitted);
       setIsSubmitting(false);
     }
 
@@ -198,7 +206,7 @@ export default function ParticipantPage() {
     );
   }
 
-  const isCaseActive = gameState?.status === 'ACTIVE_CASE' && gameState?.currentCase;
+  const isCaseActive = (gameState?.status === 'ACTIVE_CASE' || gameState?.status === 'ACTIVE') && !!gameState?.currentCase;
   const sectorIndex = gameState?.currentSectorIndex || 1;
   const totalSectors = gameState?.totalSectors || 10;
   const isRedFlag = !!gameState?.isRedFlagActive;
@@ -266,7 +274,9 @@ export default function ParticipantPage() {
         <CountdownBar
           startTime={gameState.startTime}
           durationSeconds={gameState.durationLimitSeconds || 60}
-          onTimeExpired={() => setHasSubmitted(true)}
+          onTimeExpired={() => {
+            console.log('Cronómetro de Pits cumplido en este sector');
+          }}
         />
       )}
 
