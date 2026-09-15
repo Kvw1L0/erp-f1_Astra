@@ -461,6 +461,89 @@ class SoundEngine {
       });
     } catch (e) {}
   }
+
+  // 16. Clic sutil de Selección de Opción o Equipo
+  playSelect() {
+    if (this.muted || typeof window === 'undefined') return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(750, t);
+      osc.frequency.exponentialRampToValueAtTime(350, t + 0.04);
+
+      gain.gain.setValueAtTime(0.12, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.04);
+    } catch (e) {}
+  }
+
+  // 17. Confirmación de Éxito / Envío de Telemetría
+  playSuccess() {
+    if (this.muted || typeof window === 'undefined') return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const notes = [587.33, 880]; // D5, A5
+      notes.forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime + idx * 0.08);
+
+        gain.gain.setValueAtTime(0.18, this.ctx.currentTime + idx * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + idx * 0.08 + 0.25);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(this.ctx.currentTime + idx * 0.08);
+        osc.stop(this.ctx.currentTime + idx * 0.08 + 0.25);
+      });
+    } catch (e) {}
+  }
+
+  // 18. Ticker de Cuenta Regresiva de Minijuegos
+  playCountdownTick() {
+    if (this.muted || typeof window === 'undefined') return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    try {
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(600, t);
+
+      gain.gain.setValueAtTime(0.15, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.03);
+    } catch (e) {}
+  }
+
+  // 19. Alerta de Precaución VSC
+  playVSCAlert() {
+    this.playSafetyCarSiren();
+  }
 }
 
 export const triggerHaptic = (pattern = [40, 30, 40]) => {
@@ -471,4 +554,19 @@ export const triggerHaptic = (pattern = [40, 30, 40]) => {
   }
 };
 
-export const sounds = new SoundEngine();
+const soundEngineInstance = new SoundEngine();
+
+// Proxy de seguridad: garantiza que NUNCA una llamada a un sonido inexistente arroje TypeError
+export const sounds = new Proxy(soundEngineInstance, {
+  get(target, prop) {
+    if (prop in target) {
+      const val = target[prop];
+      if (typeof val === 'function') {
+        return val.bind(target);
+      }
+      return val;
+    }
+    // Fallback seguro silencioso para cualquier método ausente
+    return () => {};
+  }
+});
