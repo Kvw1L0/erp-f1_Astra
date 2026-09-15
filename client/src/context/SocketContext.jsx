@@ -12,6 +12,7 @@ const SOCKET_SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhos
 export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [hasSynced, setHasSynced] = useState(false);
   const [isCloudFirebase, setIsCloudFirebase] = useState(false);
   const [gameState, setGameState] = useState({
     status: 'LOBBY',
@@ -42,6 +43,7 @@ export function SocketProvider({ children }) {
 
       // Escuchar cambios de estado en Firebase
       const unsubState = firebaseRaceEngine.onStateChange((state) => {
+        setHasSynced(true);
         if (state) {
           setGameState(prev => ({
             ...prev,
@@ -115,6 +117,7 @@ export function SocketProvider({ children }) {
 
     newSocket.on('state_sync', (state) => {
       setGameState(state);
+      setHasSynced(true);
     });
 
     newSocket.on('case_started', (data) => {
@@ -360,6 +363,7 @@ export function SocketProvider({ children }) {
     <SocketContext.Provider value={{
       socket,
       isConnected,
+      hasSynced,
       isCloudFirebase,
       gameState,
       setGameState,

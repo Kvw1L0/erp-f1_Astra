@@ -29,21 +29,18 @@ const TEAMS_LIST = [
 
 function normalizeResults(raw) {
   if (!raw) return null;
-  const ranking = Array.isArray(raw.ranking) ? raw.ranking : Object.values(raw.ranking || {});
-  const teams = Array.isArray(raw.teams) ? raw.teams : Object.values(raw.teams || {});
-  return {
-    ...raw,
-    ranking,
-    teams
+  return {...raw,
+    ranking: (Array.isArray(raw.ranking) ? raw.ranking : Object.values(raw.ranking || {})).filter(Boolean),
+    teams: (Array.isArray(raw.teams) ? raw.teams : Object.values(raw.teams || {})).filter(Boolean)
   };
 }
 
 export default function RaceScreenPage() {
-  const { socket, isConnected, gameState, cloudActions } = useSocket();
+  const { socket, isConnected, hasSynced, gameState, cloudActions } = useSocket();
   const [isMuted, setIsMuted] = useState(false);
   const [isNitroActive, setIsNitroActive] = useState(false);
   const [showCinematic, setShowCinematic] = useState(false);
-  const [cinematicType, setCinematicType] = useState('START'); // 'START' | 'RACE_BATTLE'
+  const [cinematicType, setCinematicType] = useState('RACE_BATTLE');
   const [showPodium, setShowPodium] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
   const [showDebrief, setShowDebrief] = useState(false);
@@ -52,9 +49,17 @@ export default function RaceScreenPage() {
   const [enableCinematic, setEnableCinematic] = useState(true);
   const [recentOvertakes, setRecentOvertakes] = useState([]);
   const [isSuspenseWait, setIsSuspenseWait] = useState(false);
-  const [isCarsAdvancing, setIsCarsAdvancing] = useState(false);
 
-  const prevCaseIdRef = useRef(null);
+  const [isTrackReleased, setIsTrackReleased] = useState(false);
+  const initializedRef = useRef(false);
+  const lastProcessedResultsKeyRef = useRef(null);
+  const presentationTimers = useRef([]);
+  const presentationStarted = useRef(false);
+  const clearPresentationTimers = () => {
+    presentationTimers.current.forEach(clearTimeout);
+    presentationTimers.current = [];
+  };
+  useEffect(() => () => clearPresentationTimers(), []);
 
   useEffect(() => {
     if (socket && isConnected) {
@@ -64,7 +69,7 @@ export default function RaceScreenPage() {
 
   // Manejar sonido ambiente en reposo
   useEffect(() => {
-    if (gameState?.status === 'ACTIVE_CASE' && !isMuted) {
+    if (['ACTIVE_CASE', 'ACTIVE'].includes(gameState?.status) && !isMuted) {
       sounds.startAmbientEngine();
     } else {
       sounds.stopAmbientEngine();
@@ -75,165 +80,79 @@ export default function RaceScreenPage() {
     };
   }, [gameState?.status, isMuted]);
 
-  // Auto-activación de Video 1 (Largada) en Caso 1
+  // The first synchronized snapshot restores the screen; it never replays an old video.
+  // Both Firebase and Socket.IO use this single state transition handler.
   useEffect(() => {
-    if (gameState?.status === 'ACTIVE' && gameState?.currentCase?.id === 1) {
-      if (prevCaseIdRef.current !== 1) {
-        prevCaseIdRef.current = 1;
-        if (enableCinematic) {
-          setCinematicType('START');
-          setShowCinematic(true);
-        }
-      }
-    }
-  }, [gameState?.status, gameState?.currentCase, enableCinematic]);
-
-  // Manejar revelación de resultados con secuencia: Video 2 (Carrera) -> 2s Pausa -> Movimiento Monoplazas (Firebase Cloud)
-  const lastProcessedResultsKeyRef = useRef(null);
-
-  useEffect(() => {
-    if (gameState?.status === 'REVEALED' && gameState?.calculatedResults) {
-      const results = normalizeResults(gameState.calculatedResults);
-      const resultsKey = results.calculatedAt || results.timestamp || results.roundTimestamp || (results.ranking && results.ranking[0] ? `${results.ranking[0].teamId}_${results.ranking[0].score}` : 'rev');
-      
-      if (lastProcessedResultsKeyRef.current !== resultsKey) {
+    if (!hasSynced) return;
+    const results = normalizeResults(gameState?.calculatedResults);
+    const resultsKey = results && String(results.calculatedAt || results.timestamp || results.roundTimestamp ||
+      [gameState.startTime, results.caseId, results.sectorIndex].join(':'));
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      if (gameState.status === 'REVEALED' && results) {
         lastProcessedResultsKeyRef.current = resultsKey;
         setResultsData(results);
-        setIsCarsAdvancing(false);
-        setIsNitroActive(false);
-        setShowPodium(false);
-
-        if (results?.ranking && Array.isArray(results.ranking)) {
-          const overtakes = results.ranking
-            .filter(r => r && r.positionDelta > 0)
-            .sort((a, b) => b.positionDelta - a.positionDelta)
-            .map(r => ({
-              teamId: r.teamId,
-              teamName: r.shortName || r.teamName,
-              color: r.color,
-              newPos: r.currentPosition,
-              delta: r.positionDelta
-            }));
-          setRecentOvertakes(overtakes);
-        }
-
-        if (enableCinematic) {
-          setCinematicType('RACE_BATTLE');
-          setShowCinematic(true);
-        } else {
-          triggerSuspenseAndTrackAnimation(results);
-        }
-      }
-    } else if (gameState?.status === 'LOBBY' || gameState?.status === 'HARD_RESET') {
-      lastProcessedResultsKeyRef.current = null;
-      setResultsData(null);
-      setIsCarsAdvancing(false);
-      setIsNitroActive(false);
-      setShowCinematic(false);
-      setShowPodium(false);
-      setShowSolution(false);
-      setShowDebrief(false);
-      setRecentOvertakes([]);
-    }
-  }, [gameState?.status, gameState?.calculatedResults, enableCinematic]);
-
-  // Fallback para WebSocket local Socket.io
-  useEffect(() => {
-    if (!socket) return;
-
-    socket.on('results_revealed', (rawResults) => {
-      const results = normalizeResults(rawResults);
-      setResultsData(results);
-      setIsCarsAdvancing(false);
-      setIsNitroActive(false);
-      setShowPodium(false);
-
-      if (results?.ranking && Array.isArray(results.ranking)) {
-        const overtakes = results.ranking
-          .filter(r => r && r.positionDelta > 0)
-          .sort((a, b) => b.positionDelta - a.positionDelta)
-          .map(r => ({
-            teamId: r.teamId,
-            teamName: r.shortName || r.teamName,
-            color: r.color,
-            newPos: r.currentPosition,
-            delta: r.positionDelta
-          }));
-        setRecentOvertakes(overtakes);
-      }
-
-      if (enableCinematic) {
-        setCinematicType('RACE_BATTLE');
-        setShowCinematic(true);
-      } else {
-        triggerSuspenseAndTrackAnimation(results);
-      }
-    });
-
-    socket.on('lobby_reset', () => {
-      setResultsData(null);
-      setIsCarsAdvancing(false);
-      setIsNitroActive(false);
-      setShowCinematic(false);
-      setShowPodium(false);
-      setShowSolution(false);
-      setShowDebrief(false);
-      setRecentOvertakes([]);
-    });
-
-    return () => {
-      socket.off('results_revealed');
-      socket.off('lobby_reset');
-    };
-  }, [socket, enableCinematic]);
-
-  // Pausa dramática de 2 segundos antes de que los vehículos avancen
-  const triggerSuspenseAndTrackAnimation = (results) => {
-    setShowCinematic(false);
-    setIsCarsAdvancing(false);
-    setIsSuspenseWait(true);
-    try { sounds?.playCountdownTick?.(); } catch (e) {}
-
-    setTimeout(() => {
-      setIsSuspenseWait(false);
-      setIsCarsAdvancing(true);
-      triggerTrackAnimation(results);
-    }, 2000);
-  };
-
-  const triggerTrackAnimation = (results) => {
-    sounds.stopAmbientEngine();
-    sounds.playRaceStart();
-
-    // Pausa de 1.8 segundos antes de activar Nitro (+20%) y DRS (+10%)
-    const nitroTimer = setTimeout(() => {
-      if (results?.fastestPerfectTeamId) {
+        setIsTrackReleased(true);
         setIsNitroActive(true);
-        sounds.playNitroBoost();
+        return;
       }
+    }
+    if (gameState.status !== 'REVEALED') {
+      clearPresentationTimers();
+      presentationStarted.current = false;
+      setIsTrackReleased(false);
+      setResultsData(null);
+      setIsNitroActive(false);
+      setShowCinematic(false);
+      setIsSuspenseWait(false);
+      setShowPodium(false);
+      setShowSolution(false);
+      setShowDebrief(false);
+      setRecentOvertakes([]);
+      return;
+    }
+    if (!results || resultsKey === lastProcessedResultsKeyRef.current) return;
+    lastProcessedResultsKeyRef.current = resultsKey;
+    clearPresentationTimers();
+    presentationStarted.current = false;
+    setResultsData(results);
+    setIsTrackReleased(false);
+    setIsNitroActive(false);
+    setShowPodium(false);
+    if (enableCinematic) {
+      setCinematicType('RACE_BATTLE');
+      setShowCinematic(true);
+    } else {
+      triggerSuspenseAndTrackAnimation(results);
+    }
+  }, [hasSynced, gameState?.status, gameState?.startTime, gameState?.calculatedResults, enableCinematic]);
 
-      const teamsList = Array.isArray(results?.teams) ? results.teams : Object.values(results?.teams || {});
-      const hasDRS = teamsList.some(t => t?.isDRSActive);
-      if (hasDRS) {
-        setTimeout(() => sounds.playDRSActive(), 600);
-      }
-
-      const podiumTimer = setTimeout(() => {
-        setShowPodium(true);
-      }, 3500);
-
-      return () => clearTimeout(podiumTimer);
-    }, 1800);
-
-    return () => clearTimeout(nitroTimer);
+  const triggerSuspenseAndTrackAnimation = (results) => {
+    if (presentationStarted.current || !results) return;
+    presentationStarted.current = true;
+    setShowCinematic(false);
+    setIsSuspenseWait(true);
+    sounds.playCountdownTick();
+    presentationTimers.current.push(setTimeout(() => {
+      setIsSuspenseWait(false);
+      setIsTrackReleased(true);
+      sounds.stopAmbientEngine();
+      sounds.playRaceStart();
+      setRecentOvertakes((results.ranking || []).filter(r => r.positionDelta > 0)
+        .sort((a,b) => b.positionDelta-a.positionDelta)
+        .map(r => ({teamId:r.teamId, teamName:r.shortName || r.teamName, color:r.color,
+          newPos:r.currentPosition, delta:r.positionDelta})));
+      // Finish the base movement (2.5 s), then pause 2 s before the extra 20%.
+      presentationTimers.current.push(setTimeout(() => {
+        setIsNitroActive(true);
+        if (results.fastestPerfectTeamId) sounds.playNitroBoost();
+      }, 4500));
+      presentationTimers.current.push(setTimeout(() => setShowPodium(true), 8000));
+    }, 2000));
   };
 
   const handleCinematicFinish = () => {
-    if (cinematicType === 'RACE_BATTLE') {
-      triggerSuspenseAndTrackAnimation(resultsData || gameState?.calculatedResults);
-    } else {
-      setShowCinematic(false);
-    }
+    triggerSuspenseAndTrackAnimation(resultsData || gameState?.calculatedResults);
   };
 
   const toggleMute = () => {
@@ -252,8 +171,8 @@ export default function RaceScreenPage() {
 
   const currentSectorIndex = gameState?.currentSectorIndex || 1;
   const totalSectors = gameState?.totalSectors || 10;
-  const isRevealed = gameState?.status === 'REVEALED' || resultsData !== null;
-  const isCaseActive = gameState?.status === 'ACTIVE_CASE';
+  const isRevealed = isTrackReleased;
+  const isCaseActive = ['ACTIVE_CASE', 'ACTIVE'].includes(gameState?.status);
   const isSafetyCarActive = gameState?.isSafetyCarActive || false;
   const isRedFlagActive = !!gameState?.isRedFlagActive;
   const isWetRaceActive = !!gameState?.isWetRaceActive;
@@ -533,8 +452,7 @@ export default function RaceScreenPage() {
       <main className="flex-1 my-3 flex flex-col justify-center bg-f1-card/60 rounded-2xl border border-f1-border p-2 md:p-3 overflow-hidden shadow-2xl relative">
         {TEAMS_LIST.map((team, index) => {
           const laneNum = index + 1;
-          const teamsList = Array.isArray(resultsData?.teams) ? resultsData.teams : Object.values(resultsData?.teams || {});
-          const result = teamsList.find(t => t?.teamId === laneNum);
+          const result = resultsData?.teams?.find(t => t.teamId === laneNum);
           const telemetry = teamTelemetry[laneNum] || {
             currentPosition: laneNum,
             currentDistance: 0,
@@ -552,7 +470,6 @@ export default function RaceScreenPage() {
               result={result}
               telemetry={telemetry}
               isRevealed={isRevealed}
-              isCarsAdvancing={isCarsAdvancing}
               isNitroActive={isNitroActive}
               isCloseBattle={isCloseBattle}
             />
@@ -607,3 +524,4 @@ export default function RaceScreenPage() {
     </div>
   );
 }
+

@@ -79,10 +79,9 @@ export default function PinLogin({ onLoginSuccess, isConnecting }) {
 
     setIsLoading(true);
     setError('');
-    sounds.playSelect();
-    triggerHaptic([50, 40, 50]);
-
     try {
+      sounds.playSelect();
+      triggerHaptic([50, 40, 50]);
       const teamPayload = {
         id: selectedTeam.id,
         name: selectedTeam.name,
@@ -96,6 +95,7 @@ export default function PinLogin({ onLoginSuccess, isConnecting }) {
     } catch (err) {
       console.error('Error en login de participante:', err);
       setError('Error al conectar la terminal de Pits. Intenta de nuevo.');
+    } finally {
       setIsLoading(false);
     }
   };

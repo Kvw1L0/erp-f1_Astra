@@ -40,6 +40,30 @@ class SoundEngine {
     }
   }
 
+  // UI feedback must never interrupt login, answers or the presentation.
+  playFeedback(frequency = 660, duration = 0.08) {
+    try {
+      if (this.muted) return;
+      this.ensureContext();
+      if (!this.ctx) return;
+      const oscillator = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+      oscillator.connect(gain);
+      gain.connect(this.ctx.destination);
+      oscillator.start();
+      oscillator.stop(this.ctx.currentTime + duration);
+    } catch (_) { /* Audio is optional, including when blocked by the browser. */ }
+  }
+
+  playSelect() { this.playFeedback(); }
+  playSuccess() { this.playFeedback(880, 0.2); }
+  playCountdownTick() { this.playFeedback(440, 0.12); }
+  playDopplerOvertake() { try { this.playOvertakeWhoosh(); } catch (_) {} }
+  playVSCAlert() { try { this.playSafetyCarSiren(); } catch (_) {} }
+
   // Reproductor de archivo MP3 opcional con fallback garantizado a síntesis
   playAudioFile(filename, fallbackFn) {
     if (this.muted || typeof window === 'undefined') return;
@@ -329,11 +353,6 @@ class SoundEngine {
       osc.start(t);
       osc.stop(t + 0.45);
     } catch (e) {}
-  }
-
-  // 9b. Efecto Doppler de Sobrepaso en Video de Batalla
-  playDopplerOvertake() {
-    this.playOvertakeWhoosh();
   }
 
   // 10. Confirmación de Pits

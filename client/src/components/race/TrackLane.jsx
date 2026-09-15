@@ -14,7 +14,6 @@ export default function TrackLane({
   result,
   telemetry,
   isRevealed,
-  isCarsAdvancing = false,
   isNitroActive,
   isCloseBattle = false
 }) {
@@ -27,10 +26,10 @@ export default function TrackLane({
   const previousDist = telemetry?.previousDistance ?? 0;
   const targetDist = telemetry?.currentDistance ?? 0;
 
-  // Si los autos no han recibido la señal verde de avance (espera de video y pausa de 2s), mantener en posición previa
-  const displayPercent = isRevealed
-    ? (isCarsAdvancing ? targetDist : previousDist)
-    : targetDist;
+  // Si no está revelado aún el resultado, mostrar en su posición previa acumulada
+  const sectorAdvance = Math.max(0, targetDist - previousDist);
+  const baseDistance = isBoosted ? targetDist - sectorAdvance / 6 : targetDist;
+  const displayPercent = !isRevealed ? previousDist : isBoosted && !isNitroActive ? baseDistance : targetDist;
 
   // Mapeo seguro al carril visual (dejamos margen para el auto)
   // 0% -> 1%, 100% -> 91%
@@ -191,3 +190,4 @@ export default function TrackLane({
     </div>
   );
 }
+

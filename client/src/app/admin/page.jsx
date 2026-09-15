@@ -747,11 +747,14 @@ export default function AdminPage() {
 
   const handleAutoFinishCase = async () => {
     setIsLoading(true);
-    const res = await cloudActions.autoFinishCase(selectedCase, currentSector, totalSectors);
-    setIsLoading(false);
-    if (res?.success) {
-      setNotification(`⚡ Ronda finalizada: Video Batalla (${selectedCase.battleTitle || 'Sector ' + currentSector}) activado y cálculo de avances.`);
-      setTimeout(() => setNotification(''), 4000);
+    try {
+      const res = await cloudActions.autoFinishCase(gameState.currentCase, gameState.currentSectorIndex, gameState.totalSectors);
+      if (!res?.success) throw new Error(res?.message || 'No se pudo evaluar la ronda');
+      setNotification('Respuestas evaluadas. El video comienza automáticamente y, al terminar, avanzan los autos.');
+    } catch (error) {
+      setNotification(error.message || 'No se pudo evaluar la ronda. Intenta nuevamente.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1027,12 +1030,12 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={handleAutoFinishCase}
-                    disabled={isLoading}
+                    disabled={isLoading || !['ACTIVE_CASE', 'LOCKED'].includes(currentStatus)}
                     className="p-4 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-mono font-bold text-xs uppercase flex flex-col items-center justify-center gap-1.5 transition-all shadow-lg shadow-cyan-500/20 active:scale-95 border border-cyan-400/40"
                   >
                     <Zap className="w-5 h-5 fill-current" />
-                    <span>2. FINALIZAR RONDA</span>
-                    <span className="text-[9px] opacity-90 font-normal">Video 2 Batalla + 2s + Avance</span>
+                    <span>2. EVALUAR RESPUESTAS</span>
+                    <span className="text-[9px] opacity-90 font-normal">Evaluación → Video → Avance</span>
                   </button>
 
                   {/* 3. Siguiente Sector */}

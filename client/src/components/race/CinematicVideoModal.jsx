@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FastForward, Volume2, VolumeX, Zap, Gauge, Radio, Sparkles } from 'lucide-react';
 import { sounds } from '../../lib/soundEffects';
 
@@ -59,20 +59,20 @@ export default function CinematicVideoModal({
   const isStart = videoType === 'START';
   const defaultDuration = isStart ? 6 : 7;
   const [secondsLeft, setSecondsLeft] = useState(defaultDuration);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [videoError, setVideoError] = useState(false);
   const [lightsCount, setLightsCount] = useState(0);
   const [liveSpeed, setLiveSpeed] = useState(312);
   const [liveRpmRatio, setLiveRpmRatio] = useState(0.85);
   const videoRef = useRef(null);
-  const hasFinishedRef = useRef(false);
-
-  const safeFinish = useCallback(() => {
-    if (!hasFinishedRef.current) {
-      hasFinishedRef.current = true;
-      if (onFinish) onFinish();
-    }
-  }, [onFinish]);
+  const finishedRef = useRef(false);
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
+  const finishOnce = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    onFinishRef.current?.();
+  };
 
   const sectorKey = Math.min(Math.max(Number(sectorIndex) || 1, 1), 10);
   const sectorTheme = DEFAULT_BATTLE_THEMES[sectorKey] || DEFAULT_BATTLE_THEMES[1];
@@ -116,27 +116,19 @@ export default function CinematicVideoModal({
       const lightInterval = setInterval(() => {
         count++;
         setLightsCount(count);
-        try { sounds?.playCountdownTick?.(); } catch (e) {}
+        sounds.playCountdownTick();
         if (count >= 5) {
           clearInterval(lightInterval);
           setTimeout(() => {
             setLightsCount(0);
-            try { sounds?.playRaceStart?.(); } catch (e) {}
+            sounds.playRaceStart();
           }, 1200);
         }
       }, 700);
 
       return () => clearInterval(lightInterval);
     } else {
-      try {
-        if (sounds?.playDopplerOvertake) {
-          sounds.playDopplerOvertake();
-        } else if (sounds?.playOvertakeWhoosh) {
-          sounds.playOvertakeWhoosh();
-        }
-      } catch (e) {
-        console.warn('Audio play error in CinematicVideoModal:', e);
-      }
+      sounds.playDopplerOvertake();
     }
   }, [isStart]);
 
@@ -151,21 +143,20 @@ export default function CinematicVideoModal({
     return () => clearInterval(telemTimer);
   }, [isStart]);
 
-  // Cronómetro de cierre automático
+  // Real media ends through onEnded, never through a fixed seven-second timer.
+  // Only the synthetic fallback has a duration limit.
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          safeFinish();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    if (!videoError) return;
+    const timer = setTimeout(finishOnce, defaultDuration * 1000);
+    return () => clearTimeout(timer);
+  }, [videoError, defaultDuration]);
 
-    return () => clearInterval(timer);
-  }, [safeFinish]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (videoRef.current && videoRef.current.readyState < 2) setVideoError(true);
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [currentVideoSrc]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center select-none overflow-hidden animate-fade-in">
@@ -180,7 +171,11 @@ export default function CinematicVideoModal({
             playsInline
             muted={isMuted}
             onError={handleVideoError}
-            onEnded={safeFinish}
+            onEnded={finishOnce}
+            onTimeUpdate={(event) => {
+              const media = event.currentTarget;
+              if (Number.isFinite(media.duration)) setSecondsLeft(Math.ceil(media.duration - media.currentTime));
+            }}
             className="w-full h-full object-cover opacity-90"
           >
             <source src={currentVideoSrc} type="video/mp4" />
@@ -282,7 +277,7 @@ export default function CinematicVideoModal({
             </button>
 
             <button
-              onClick={safeFinish}
+              onClick={finishOnce}
               className="px-5 py-2.5 rounded-xl bg-white/95 hover:bg-white text-black font-mono font-black text-xs uppercase flex items-center gap-2 shadow-2xl hover:scale-105 active:scale-95 transition-all"
             >
               <span>SALTAR VIDEO ({secondsLeft}s)</span>
@@ -369,3 +364,4 @@ export default function CinematicVideoModal({
     </div>
   );
 }
+

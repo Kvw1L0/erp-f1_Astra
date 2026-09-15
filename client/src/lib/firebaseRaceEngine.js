@@ -161,38 +161,18 @@ class FirebaseRaceEngine {
     return submissionData;
   }
 
-  // 5. Finalizar automáticamente y calcular resultados (Botón Auto / Demo)
+  // Evaluate actual submissions only. A missing team receives DNF, never fabricated answers.
   async autoFinish(currentCase, currentSectorIndex = 1, totalSectors = 10) {
     this.init();
-    if (!this.db) return;
-    const steps = currentCase?.steps || [];
-    const subsSnap = await get(ref(this.db, 'f1_race/submissions'));
-    const currentSubs = subsSnap.val() || {};
-
-    // Rellenar respuestas para los equipos que no enviaron
-    for (const team of TEAMS_LIST) {
-      if (!currentSubs[team.id]) {
-        const simAnswers = {};
-        // Simulación variada: algunos perfectos, algunos con pequeños errores
-        const isPerfect = team.id === 1 || team.id === 4 || team.id === 8 || Math.random() > 0.45;
-        const durationMs = Math.round((7 + Math.random() * 20) * 1000);
-
-        steps.forEach(s => {
-          if (isPerfect) {
-            const bestOpt = s.options.reduce((p, c) => (c.points > p.points ? c : p), s.options[0]);
-            simAnswers[s.id] = bestOpt.id;
-          } else {
-            const rndOpt = s.options[Math.floor(Math.random() * s.options.length)];
-            simAnswers[s.id] = rndOpt.id;
-          }
-        });
-
-        await this.submitAnswers(team.id, simAnswers, Date.now() - durationMs, currentCase);
-      }
+    if (!this.db) throw new Error('No hay conexión con la carrera');
+    const snapshot = await get(ref(this.db, 'f1_race/state'));
+    const state = snapshot.val();
+    if (state?.status === 'REVEALED' && state.calculatedResults) return state.calculatedResults;
+    if (!state?.currentCase || !['ACTIVE_CASE', 'LOCKED'].includes(state.status)) {
+      throw new Error('Inicia un caso antes de evaluar las respuestas');
     }
-
-    // Calcular y revelar resultados
-    return await this.calculateAndRevealResults(currentCase, currentSectorIndex, totalSectors);
+    await update(ref(this.db, 'f1_race/state'), { status: 'LOCKED' });
+    return this.calculateAndRevealResults(state.currentCase, state.currentSectorIndex, state.totalSectors);
   }
 
   // 6. Calcular resultados de la ronda, Pole Position Boost (+20%) y DRS (+10% en P8-P10)
