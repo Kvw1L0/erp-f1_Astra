@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { raceNow } from '../../lib/firebase';
 import { Clock, AlertTriangle } from 'lucide-react';
 
 export default function CountdownBar({ startTime, durationSeconds = 60, onTimeExpired }) {
@@ -15,7 +16,7 @@ export default function CountdownBar({ startTime, durationSeconds = 60, onTimeEx
     hasExpiredRef.current = false;
 
     const interval = setInterval(() => {
-      const now = Date.now();
+      const now = raceNow();
       const elapsed = Math.max(0, now - startTime);
       const remaining = Math.max(0, totalMs - elapsed);
 

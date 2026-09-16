@@ -10,10 +10,17 @@ import SuperBoostMinigame from '../../components/participant/SuperBoostMinigame'
 import { Flag, Activity, Wifi, WifiOff, Clock, Compass, Zap, ShieldAlert, Radio, AlertOctagon, CloudRain, Users, CheckCircle2 } from 'lucide-react';
 import { sounds, triggerHaptic } from '../../lib/soundEffects';
 
+async function confirmWithin(operation) {
+  let timer;
+  try { return await Promise.race([operation, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('No pudimos confirmar la conexión. Revisa internet e intenta nuevamente.')), 15000); })]); }
+  finally { clearTimeout(timer); }
+}
+
 export default function ParticipantPage() {
   const { socket, isConnected, gameState, cloudActions } = useSocket();
   const [team, setTeam] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submissionTimeFormatted, setSubmissionTimeFormatted] = useState(null);
   const [currentPosition, setCurrentPosition] = useState(null);
@@ -135,6 +142,7 @@ export default function ParticipantPage() {
       subname: subname || teamData.subname,
       participants: participants || teamData.participants || []
     };
+    await confirmWithin(cloudActions.updateTeamProfile(fullTeam.id, fullTeam.subname, fullTeam.participants));
     setTeam(fullTeam);
     sessionStorage.setItem('f1_participant_team', JSON.stringify(fullTeam));
 
@@ -149,25 +157,21 @@ export default function ParticipantPage() {
       socket.emit('join_participant', { teamId: fullTeam.id, pin });
     }
 
-    // Sincronizar en Firebase o Cloud State
-    try {
-      await cloudActions.updateTeamProfile(fullTeam.id, fullTeam.subname, fullTeam.participants);
-    } catch (e) {
-      console.warn('Sincronización de perfil cloud:', e);
-    }
+
   };
 
   const handleSubmitAnswers = async (answers) => {
     if (!team) return;
 
+    setSubmissionError('');
     setIsSubmitting(true);
     try {
-      const res = await cloudActions.submitAnswers(
+      const res = await confirmWithin(cloudActions.submitAnswers(
         team.id,
         answers,
         gameState?.startTime,
         gameState?.currentCase
-      );
+      ));
       if (res?.success) {
         setHasSubmitted(true);
         if (res.durationSeconds) {
@@ -179,6 +183,7 @@ export default function ParticipantPage() {
         triggerHaptic([100, 50, 100]);
       }
     } catch (err) {
+      setSubmissionError('No se pudo confirmar el envío. Revisa la conexión y vuelve a intentar.');
       console.error('Error al enviar respuestas:', err);
     } finally {
       setIsSubmitting(false);
@@ -214,6 +219,7 @@ export default function ParticipantPage() {
 
   return (
     <div className="min-h-screen bg-carbon flex flex-col justify-between pt-16 pb-6 px-4 md:px-8 relative selection:bg-f1-red selection:text-white">
+      {submissionError && <p role="alert" className="rounded-xl bg-red-950 p-4 text-white">{submissionError}</p>}
       {/* 🚨 OVERLAY DE CONVOCATORIA AL ESCENARIO */}
       {isSummoned && !hasAcknowledgedSummon && (
         <div className="fixed inset-0 z-50 bg-red-950/95 backdrop-blur-lg flex items-center justify-center p-6 select-none animate-pulse">
@@ -369,6 +375,9 @@ export default function ParticipantPage() {
           />
         ) : isCaseActive && !isRedFlag ? (
           <CaseFlow
+            key={`${team.id}-${gameState.startTime}`}
+            teamId={team.id}
+            roundId={gameState.startTime}
             currentCase={gameState.currentCase}
             onSubmitAnswers={handleSubmitAnswers}
             isSubmitting={isSubmitting}

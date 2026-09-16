@@ -1,0 +1,33 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "f1_race": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.email_verified == true && auth.token.email == 'rockbemol@gmail.com' && auth.token.firebase.sign_in_provider == 'google.com'",
+      "teams": {
+        "$team": {
+          ".write": "auth != null && $team.matches(/^(10|[1-9])$/) && newData.child('ownerUid').val() == auth.uid && (!data.exists() || data.child('ownerUid').val() == auth.uid)",
+          ".validate": "newData.hasChildren(['teamId','ownerUid','subname','updatedAt'])",
+          "subname": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "participants": {
+            "$index": {
+              ".validate": "newData.isString() && newData.val().length <= 100"
+            }
+          },
+          "updatedAt": {
+            ".validate": "newData.val() == now || newData.val() == data.val()"
+          }
+        }
+      },
+      "submissions": {
+        "$team": {
+          ".write": "auth != null && $team.matches(/^(10|[1-9])$/) && newData.child('ownerUid').val() == auth.uid && !data.exists() && root.child('f1_race/teams').child($team).child('ownerUid').val() == auth.uid && root.child('f1_race/state/status').val() == 'ACTIVE_CASE' && now <= root.child('f1_race/state/startTime').val() + root.child('f1_race/state/durationLimitSeconds').val() * 1000",
+          ".validate": "newData.hasChildren(['teamId','ownerUid','answers','roundStartTime','submittedAt']) && (data.exists() || newData.child('submittedAt').val() == now) && newData.child('roundStartTime').val() == root.child('f1_race/state/startTime').val()"
+        }
+      }
+    }
+  }
+}

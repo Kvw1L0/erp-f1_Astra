@@ -1,5 +1,5 @@
-import { ref, set, get, update, onValue } from 'firebase/database';
-import { getFirebaseDb } from './firebase';
+import { ref, set, get, update, onValue, serverTimestamp, runTransaction } from 'firebase/database';
+import { getFirebaseDb, ensureRaceSession } from './firebase';
 
 export const TEAMS_LIST = [
   { id: 1, name: "Escudería 1 - Red Bull Racing", color: "#3671C6", shortName: "EQ 01" },
@@ -27,7 +27,7 @@ class FirebaseRaceEngine {
   }
 
   // 1. Escuchar cambios de estado global de la carrera
-  onStateChange(callback) {
+  onStateChange(callback, onError) {
     this.init();
     if (!this.db) return () => {};
 
@@ -35,7 +35,7 @@ class FirebaseRaceEngine {
     return onValue(stateRef, (snapshot) => {
       const val = snapshot.val();
       callback(val);
-    });
+    }, onError);
   }
 
   // 2. Escuchar cambios de telemetría de los 10 equipos
@@ -86,27 +86,34 @@ class FirebaseRaceEngine {
     });
   }
 
+  onRadioChange(callback) {
+    this.init();
+    return onValue(ref(this.db, 'f1_race/radio_message'), snap => callback(snap.val()));
+  }
+  onCatalogChange(callback) {
+    this.init();
+    return onValue(ref(this.db, 'f1_race/catalog'), snap => callback(snap.val()));
+  }
+  async saveCatalog(cases) {
+    this.init();
+    await set(ref(this.db, 'f1_race/catalog'), {cases});
+  }
+
   // 3. Iniciar un caso / Sector
   async startCase(caseData, sectorIndex = 1, totalSectors = 10) {
     this.init();
     if (!this.db) return;
 
-    const startTime = Date.now();
+    const startTime = serverTimestamp();
 
-    // Limpiar envíos de la ronda previa
-    await set(ref(this.db, 'f1_race/submissions'), {});
-
-    // Actualizar estado activo
-    await update(ref(this.db, 'f1_race/state'), {
-      status: 'ACTIVE_CASE',
-      currentCase: caseData,
-      currentSectorIndex: Number(sectorIndex),
-      totalSectors: Number(totalSectors),
-      startTime,
-      durationLimitSeconds: caseData.timeLimitSeconds || 60,
-      submissionsCount: 0,
-      calculatedResults: null,
-      isSafetyCarActive: false
+    await update(ref(this.db, 'f1_race'), {
+      submissions: null,
+      state: {
+        status: 'ACTIVE_CASE', currentCase: caseData,
+        currentSectorIndex: Number(sectorIndex), totalSectors: Number(totalSectors),
+        startTime, durationLimitSeconds: caseData.timeLimitSeconds || 60,
+        submissionsCount: 0, calculatedResults: null, isSafetyCarActive: false
+      }
     });
   }
 
@@ -115,63 +122,39 @@ class FirebaseRaceEngine {
     this.init();
     if (!this.db) return;
 
-    const numTeamId = Number(teamId);
-    const team = TEAMS_LIST.find(t => t.id === numTeamId);
-    const now = Date.now();
-    const effectiveStart = startTime || now;
-    const durationMs = Math.max(100, now - effectiveStart);
-
-    let totalScore = 0;
-    const stepBreakdown = {};
-
-    const steps = currentCase?.steps || [];
-    steps.forEach(step => {
-      const chosenOptId = answers[step.id];
-      const opt = step.options?.find(o => o.id === chosenOptId);
-      const pts = opt ? Number(opt.points) || 0 : 0;
-      totalScore += pts;
-      stepBreakdown[step.id] = {
-        chosenOptionId: chosenOptId,
-        points: pts
-      };
-    });
-
-    const submissionData = {
-      teamId: numTeamId,
-      teamName: team?.name || `Equipo ${numTeamId}`,
-      shortName: team?.shortName || `EQ ${numTeamId}`,
-      color: team?.color || '#E10600',
-      score: totalScore,
-      durationMs,
-      durationSeconds: (durationMs / 1000).toFixed(2),
-      submittedAt: now,
-      stepBreakdown
-    };
-
-    // Guardar en Firebase
-    await set(ref(this.db, `f1_race/submissions/${numTeamId}`), submissionData);
-
-    // Actualizar contador
-    const subsSnap = await get(ref(this.db, 'f1_race/submissions'));
-    const allSubs = subsSnap.val() || {};
-    await update(ref(this.db, 'f1_race/state'), {
-      submissionsCount: Object.keys(allSubs).length
-    });
-
-    return submissionData;
+    const user = await ensureRaceSession();
+    const state = (await get(ref(this.db, 'f1_race/state'))).val();
+    if (!state || state.status !== 'ACTIVE_CASE') throw new Error('La ronda está cerrada');
+    const validAnswers = {};
+    for (const step of Object.values(state.currentCase.steps || {})) {
+      const choice = answers[step.id];
+      if (!Object.values(step.options || {}).some(option => option.id === choice)) throw new Error('Completa todos los pasos');
+      validAnswers[step.id] = choice;
+    }
+    const path = ref(this.db, `f1_race/submissions/${Number(teamId)}`);
+    await runTransaction(path, existing => existing || {
+      teamId: Number(teamId), ownerUid: user.uid, answers: validAnswers,
+      roundStartTime: state.startTime, submittedAt: serverTimestamp()
+    }, {applyLocally: false});
+    const stored = (await get(path)).val();
+    if (!stored || stored.ownerUid !== user.uid) throw new Error('No se pudo confirmar el envío');
+    return {...stored, durationSeconds: ((stored.submittedAt-state.startTime)/1000).toFixed(2)};
   }
 
   // Evaluate actual submissions only. A missing team receives DNF, never fabricated answers.
   async autoFinish(currentCase, currentSectorIndex = 1, totalSectors = 10) {
     this.init();
     if (!this.db) throw new Error('No hay conexión con la carrera');
-    const snapshot = await get(ref(this.db, 'f1_race/state'));
-    const state = snapshot.val();
-    if (state?.status === 'REVEALED' && state.calculatedResults) return state.calculatedResults;
-    if (!state?.currentCase || !['ACTIVE_CASE', 'LOCKED'].includes(state.status)) {
-      throw new Error('Inicia un caso antes de evaluar las respuestas');
-    }
-    await update(ref(this.db, 'f1_race/state'), { status: 'LOCKED' });
+    const initialState = (await get(ref(this.db, 'f1_race/state'))).val();
+    const lock = await runTransaction(ref(this.db, 'f1_race/state'), state => {
+      state = state || initialState;
+      if (!state?.currentCase) return;
+      if (state.status === 'ACTIVE_CASE') return {...state, status: 'LOCKED'};
+      return state;
+    }, {applyLocally: false});
+    const state = lock.snapshot.val();
+    if (state?.status === 'REVEALED') return state.calculatedResults;
+    if (state?.status !== 'LOCKED') throw new Error('Inicia un caso antes de evaluar');
     return this.calculateAndRevealResults(state.currentCase, state.currentSectorIndex, state.totalSectors);
   }
 
@@ -180,12 +163,24 @@ class FirebaseRaceEngine {
     this.init();
     if (!this.db) return;
 
-    const subsSnap = await get(ref(this.db, 'f1_race/submissions'));
-    const telemSnap = await get(ref(this.db, 'f1_race/telemetry'));
-
-    const submissions = subsSnap.val() || {};
-    const previousTelemetry = telemSnap.val() || {};
-
+    const initialRace = (await get(ref(this.db, 'f1_race'))).val();
+    const transaction = await runTransaction(ref(this.db, 'f1_race'), race => {
+    race = race || initialRace;
+    if (!race?.state) return;
+    if (race.state.status === 'REVEALED') return race;
+    if (race.state.status !== 'LOCKED') return;
+    currentCase = race.state.currentCase;
+    currentSectorIndex = race.state.currentSectorIndex;
+    totalSectors = race.state.totalSectors;
+    const submissions = Object.fromEntries(Object.entries(race.submissions || {}).map(([id, sub]) => [id, {...sub}]));
+    const previousTelemetry = race.telemetry || {};
+    for (const sub of Object.values(submissions)) {
+      sub.score = Object.values(currentCase.steps || {}).reduce((sum, step) => {
+        const option = Object.values(step.options || {}).find(o => o.id === sub.answers?.[step.id]);
+        return sum + (Number(option?.points) || 0);
+      }, 0);
+      sub.durationMs = Math.max(0, Number(sub.submittedAt) - Number(race.state.startTime));
+    }
     const steps = currentCase?.steps || [];
     let maxPossibleScore = 0;
     steps.forEach(s => {
@@ -329,15 +324,30 @@ class FirebaseRaceEngine {
       calculatedAt: Date.now()
     };
 
-    // Guardar en Firebase y archivar en historial
-    await set(ref(this.db, 'f1_race/telemetry'), newTelemetry);
-    await update(ref(this.db, 'f1_race/state'), {
-      status: 'REVEALED',
-      calculatedResults
-    });
-    await set(ref(this.db, `f1_race/history/sector_${currentSectorIndex}`), calculatedResults);
+    return {...race, telemetry: newTelemetry,
+      state: {...race.state, status: 'REVEALED', calculatedResults},
+      history: {...race.history, [`sector_${currentSectorIndex}`]: calculatedResults}};
+    }, {applyLocally: false});
+    const result = transaction.snapshot.val()?.state?.calculatedResults;
+    if (!result) throw new Error('No se pudo evaluar la ronda');
+    return result;
+  }
 
-    return calculatedResults;
+  async simulate10Teams(currentCase, sectorIndex, totalSectors) {
+    this.init();
+    const existing = (await get(ref(this.db, 'f1_race/submissions'))).val();
+    if (existing && Object.keys(existing).length) throw new Error('La simulación requiere una ronda sin respuestas.');
+    await this.startCase(currentCase, sectorIndex, totalSectors);
+    const state = (await get(ref(this.db, 'f1_race/state'))).val();
+    const user = await ensureRaceSession();
+    const simulated = {};
+    for (const team of TEAMS_LIST) {
+      const answers = {};
+      for (const step of currentCase.steps) answers[step.id] = step.options[(team.id - 1) % step.options.length].id;
+      simulated[team.id] = {teamId:team.id,ownerUid:user.uid,answers,roundStartTime:state.startTime,submittedAt:serverTimestamp()};
+    }
+    await set(ref(this.db, 'f1_race/submissions'), simulated);
+    return this.autoFinish();
   }
 
   // 7. Activar o desactivar Virtual Safety Car (VSC)
@@ -436,35 +446,6 @@ class FirebaseRaceEngine {
     });
   }
 
-  // 10. Actualizar perfil de equipo (subnombre y nómina de participantes)
-  async updateTeamProfile(teamId, subname, participants) {
-    this.init();
-    if (!this.db) return;
-
-    const numId = Number(teamId);
-    const parsedParticipants = Array.isArray(participants) 
-      ? participants 
-      : String(participants || '').split(',').map(s => s.trim()).filter(Boolean);
-
-    const data = {
-      teamId: numId,
-      subname: String(subname || '').trim(),
-      participants: parsedParticipants,
-      updatedAt: Date.now()
-    };
-
-    await set(ref(this.db, `f1_race/teams/${numId}`), data);
-
-    const telemSnap = await get(ref(this.db, `f1_race/telemetry/${numId}`));
-    if (telemSnap.exists()) {
-      await update(ref(this.db, `f1_race/telemetry/${numId}`), {
-        subname: data.subname,
-        participants: data.participants
-      });
-    }
-    return data;
-  }
-
   // 11. Hard Reset (Foja Cero / Expulsión total de dispositivos)
   async hardReset() {
     this.init();
@@ -529,12 +510,15 @@ class FirebaseRaceEngine {
     this.init();
     if (!this.db) return;
 
+    const user = await ensureRaceSession();
     const numId = Number(teamId);
+    if (!TEAMS_LIST.some(t => t.id === numId)) throw new Error('Escudería inválida');
     await set(ref(this.db, `f1_race/teams/${numId}`), {
       teamId: numId,
-      subname: String(subname || '').trim(),
-      participants: Array.isArray(participants) ? participants : [],
-      updatedAt: Date.now()
+      ownerUid: user.uid,
+      subname: String(subname || '').trim().slice(0, 80),
+      participants: Array.isArray(participants) ? participants.slice(0, 15) : [],
+      updatedAt: serverTimestamp()
     });
   }
 

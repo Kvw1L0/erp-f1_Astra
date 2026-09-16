@@ -1,4 +1,6 @@
 'use client';
+import AdminGate from '../../components/AdminGate';
+import { firebaseRaceEngine } from '../../lib/firebaseRaceEngine';
 
 import React, { useState, useEffect } from 'react';
 import { useSocket } from '../../context/SocketContext';
@@ -689,10 +691,13 @@ const DEFAULT_CASES = [
   }
 ];
 
-export default function AdminPage() {
+export default function AdminPage() { return <AdminGate><AdminConsole /></AdminGate>; }
+
+function AdminConsole() {
   const { socket, isConnected, isCloudFirebase, gameState, cloudActions } = useSocket();
   const [activeTab, setActiveTab] = useState('race');
   const [cases, setCases] = useState(DEFAULT_CASES);
+  useEffect(() => firebaseRaceEngine.onCatalogChange(catalog => { if (catalog) setCases(catalog.cases || []); }), []);
   const [selectedCaseId, setSelectedCaseId] = useState('case-01');
   const [adminState, setAdminState] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -736,13 +741,14 @@ export default function AdminPage() {
   const enrolledTeamsCount = Object.values(teamsProfiles).filter(t => (t?.participants?.length || 0) > 0).length;
 
   const handleStartCase = async () => {
+    if (!selectedCase) { setNotification('Crea un caso antes de iniciar.'); return; }
     setIsLoading(true);
-    const res = await cloudActions.startCase(selectedCase, currentSector, totalSectors);
-    setIsLoading(false);
-    if (res?.success) {
-      setNotification(`🚀 Sector ${currentSector} iniciado con éxito.`);
-      setTimeout(() => setNotification(''), 3000);
-    }
+    try {
+      const res = await cloudActions.startCase(selectedCase, currentSector, totalSectors);
+      if (!res?.success) throw new Error('No se pudo iniciar el caso');
+      setNotification(`Sector ${currentSector} iniciado.`);
+    } catch (error) { setNotification(error.message || 'No se pudo iniciar. Revisa la conexión.'); }
+    finally { setIsLoading(false); }
   };
 
   const handleAutoFinishCase = async () => {
@@ -847,21 +853,14 @@ export default function AdminPage() {
     setTimeout(() => setNotification(''), 5000);
   };
 
-  const handleSaveCase = (caseData, existingId) => {
-    if (existingId) {
-      setCases(prev => prev.map(c => c.id === existingId ? { ...caseData, id: existingId } : c));
-    } else {
-      setCases(prev => [...prev, { ...caseData, id: `case-${Date.now()}` }]);
-    }
-    setNotification('✅ Caso guardado en el catálogo.');
-    setTimeout(() => setNotification(''), 3000);
+  const persistCases = async next => {
+    try { await firebaseRaceEngine.saveCatalog(next); setCases(next); setNotification('Catálogo guardado.'); }
+    catch (error) { setNotification('No se pudo guardar el catálogo. Intenta nuevamente.'); }
   };
-
-  const handleDeleteCase = (caseId) => {
-    setCases(prev => prev.filter(c => c.id !== caseId));
-    setNotification('🗑️ Caso eliminado.');
-    setTimeout(() => setNotification(''), 3000);
-  };
+  const handleSaveCase = (caseData, existingId) => persistCases(existingId
+    ? cases.map(c => c.id === existingId ? {...caseData, id: existingId} : c)
+    : [...cases, {...caseData, id: `case-${Date.now()}`}]);
+  const handleDeleteCase = caseId => persistCases(cases.filter(c => c.id !== caseId));
 
   return (
     <div className="min-h-screen bg-carbon text-slate-100 p-4 md:p-8 flex flex-col justify-between">

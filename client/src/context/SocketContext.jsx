@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
-import { isFirebaseConfigured } from '../lib/firebase';
+import { isFirebaseConfigured, ensureRaceSession, watchRaceConnection } from '../lib/firebase';
 import { firebaseRaceEngine, TEAMS_LIST } from '../lib/firebaseRaceEngine';
 
 const SocketContext = createContext(null);
@@ -12,6 +12,7 @@ const SOCKET_SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhos
 export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
   const [hasSynced, setHasSynced] = useState(false);
   const [isCloudFirebase, setIsCloudFirebase] = useState(isFirebaseConfigured());
   const [gameState, setGameState] = useState({
@@ -39,11 +40,18 @@ export function SocketProvider({ children }) {
     if (isFirebaseConfigured()) {
       console.log('🔥 Inicializando motor en tiempo real en la NUBE con Google Firebase...');
       setIsCloudFirebase(true);
-      setIsConnected(true);
+      setIsConnected(false);
 
+      let cancelled = false;
+      let stop = () => {};
+      ensureRaceSession().then(() => {
+      if (cancelled) return;
+      const stopConnection = watchRaceConnection(setIsConnected);
+      const stopRadio = firebaseRaceEngine.onRadioChange(radioMessage => setGameState(prev => ({...prev, radioMessage})));
       // Escuchar cambios de estado en Firebase
       const unsubState = firebaseRaceEngine.onStateChange((state) => {
         setHasSynced(true);
+        setConnectionError('');
         if (state) {
           setGameState(prev => ({
             ...prev,
@@ -51,6 +59,10 @@ export function SocketProvider({ children }) {
             teamTelemetry: prev.teamTelemetry
           }));
         }
+      }, (error) => {
+        setIsConnected(false);
+        setConnectionError('No se pudo acceder a la carrera. Comprueba la conexión o contacta al moderador.');
+        console.error('Firebase:', error.code);
       });
 
       // Escuchar telemetría en Firebase
@@ -88,13 +100,17 @@ export function SocketProvider({ children }) {
         }));
       });
 
-      return () => {
+      stop = () => {
+        stopConnection();
+        stopRadio();
         if (unsubState) unsubState();
         if (unsubTelemetry) unsubTelemetry();
         if (unsubTeams) unsubTeams();
         if (unsubSummon) unsubSummon();
         if (unsubSubmissions) unsubSubmissions();
       };
+      }).catch(error => { if (!cancelled) setConnectionError('No se pudo iniciar la sesión de carrera. Recarga para intentar nuevamente.'); console.error(error.code); });
+      return () => { cancelled = true; stop(); };
     }
 
     // 2. Fallback local mediante Socket.io (Node.js backend)
@@ -363,12 +379,14 @@ export function SocketProvider({ children }) {
     <SocketContext.Provider value={{
       socket,
       isConnected,
+      connectionError,
       hasSynced,
       isCloudFirebase,
       gameState,
       setGameState,
       cloudActions
     }}>
+      {connectionError && <div role="alert" className="fixed top-0 inset-x-0 z-[100] bg-red-950 text-white p-3 text-center">{connectionError}</div>}
       {children}
     </SocketContext.Provider>
   );

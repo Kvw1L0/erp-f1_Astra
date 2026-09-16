@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Send, AlertCircle, Wrench, ShieldCheck, HelpCircle, WifiOff, Radio, Users } from 'lucide-react';
 import { sounds } from '../../lib/soundEffects';
 
-export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, teamId = 1 }) {
+export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, teamId = 1, roundId = 0 }) {
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [expandedStep, setExpandedStep] = useState(1);
   const [validationError, setValidationError] = useState('');
@@ -24,14 +24,14 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, t
   useEffect(() => {
     if (typeof window !== 'undefined' && currentCase?.id) {
       try {
-        const saved = localStorage.getItem(`f1_draft_${currentCase.id}_team_${teamId}`);
+        const saved = localStorage.getItem(`f1_draft_${currentCase.id}_${roundId}_team_${teamId}`);
         if (saved) {
           const parsed = JSON.parse(saved);
           setSelectedAnswers(parsed);
         }
       } catch (e) {}
     }
-  }, [currentCase?.id, teamId]);
+  }, [currentCase?.id, teamId, roundId]);
 
   // Detector de conectividad de red
   useEffect(() => {
@@ -92,7 +92,7 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, t
     // Guardar copia de seguridad en memoria local
     if (typeof window !== 'undefined' && currentCase?.id) {
       try {
-        localStorage.setItem(`f1_draft_${currentCase.id}_team_${teamId}`, JSON.stringify(updated));
+        localStorage.setItem(`f1_draft_${currentCase.id}_${roundId}_team_${teamId}`, JSON.stringify(updated));
       } catch (e) {}
     }
 
@@ -115,13 +115,6 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, t
 
     sounds.playPitStopConfirm();
 
-    // Limpiar borrador local
-    if (typeof window !== 'undefined' && currentCase?.id) {
-      try {
-        localStorage.removeItem(`f1_draft_${currentCase.id}_team_${teamId}`);
-      } catch (e) {}
-    }
-
     onSubmitAnswers(selectedAnswers);
   };
 
@@ -131,7 +124,7 @@ export default function CaseFlow({ currentCase, onSubmitAnswers, isSubmitting, t
       {!isOnline && (
         <div className="p-3.5 bg-red-500/20 border border-red-500 rounded-2xl flex items-center gap-3 text-red-200 text-xs font-mono shadow-lg animate-pulse">
           <WifiOff className="w-4 h-4 flex-shrink-0" />
-          <span>⚠️ SEÑAL DE PITS INESTABLE: Respuestas guardadas en memoria local. Se transmitirán automáticamente al recuperar cobertura.</span>
+          <span>⚠️ SEÑAL DE PITS INESTABLE: Respuestas guardadas en memoria local. Vuelve a pulsar Enviar cuando recuperes conexión.</span>
         </div>
       )}
 
